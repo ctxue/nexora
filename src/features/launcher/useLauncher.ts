@@ -85,6 +85,8 @@ interface LauncherOptions {
   plugins: PluginManifest[];
   disabledPlugins: string[];
   onOpenSettings: () => void;
+  onOpenClipboard: () => void;
+  searchSuspended: boolean;
 }
 
 export function useLauncher({
@@ -95,6 +97,8 @@ export function useLauncher({
   plugins,
   disabledPlugins,
   onOpenSettings,
+  onOpenClipboard,
+  searchSuspended,
 }: LauncherOptions) {
   const { t } = useI18n();
   const [apps, setApps] = useState<AppEntry[]>([]);
@@ -251,7 +255,7 @@ export function useLauncher({
     pluginRequest.current += 1;
     const requestId = pluginRequest.current;
 
-    if (scope) {
+    if (scope || searchSuspended) {
       setPluginResults(null);
       return;
     }
@@ -293,7 +297,7 @@ export function useLauncher({
     }, 120);
 
     return () => window.clearTimeout(timer);
-  }, [enabledPlugins, query, scope]);
+  }, [enabledPlugins, query, scope, searchSuspended]);
 
   const runPluginAction = useCallback(
     async (action: PluginItem["action"]) => {
@@ -425,7 +429,10 @@ export function useLauncher({
         subtitle: t("commands.clipboard.subtitle"),
         keywords: ["clipboard", "history", "paste", "copy", "剪贴板"],
         icon: "clipboard",
-        run: () => showToast(t("toast.clipboardSoon")),
+        run: () => {
+          clearQuery();
+          onOpenClipboard();
+        },
       },
       {
         id: "settings",
@@ -470,7 +477,16 @@ export function useLauncher({
         run: () => platform.quit(),
       },
     ];
-  }, [onOpenSettings, paths, drives, settings.fileSearch, showToast, t]);
+  }, [
+    clearQuery,
+    onOpenClipboard,
+    onOpenSettings,
+    paths,
+    drives,
+    settings.fileSearch,
+    showToast,
+    t,
+  ]);
 
   const quickActions = useMemo(
     () =>
@@ -723,7 +739,7 @@ export function useLauncher({
     const requestId = ++searchRequest.current;
 
     // Inside a command scope the text is the command argument, not a file query.
-    if (!settings.fileSearch || !trimmed || scope) {
+    if (!settings.fileSearch || !trimmed || scope || searchSuspended) {
       setFileResults([]);
       return;
     }
@@ -744,7 +760,7 @@ export function useLauncher({
     }, 35);
 
     return () => window.clearTimeout(timer);
-  }, [query, scope, settings.fileSearch]);
+  }, [query, scope, searchSuspended, settings.fileSearch]);
 
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {

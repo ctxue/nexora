@@ -68,8 +68,10 @@ pub fn focus_launcher(window: &WebviewWindow) {
 pub fn has_keyboard_focus(hwnd: HWND) -> bool {
     unsafe {
         let thread = GetWindowThreadProcessId(hwnd, None);
-        let mut info = GUITHREADINFO::default();
-        info.cbSize = std::mem::size_of::<GUITHREADINFO>() as u32;
+        let mut info = GUITHREADINFO {
+            cbSize: std::mem::size_of::<GUITHREADINFO>() as u32,
+            ..Default::default()
+        };
         GetGUIThreadInfo(thread, &mut info).is_ok()
             && !info.hwndFocus.is_invalid()
             && info.hwndFocus != hwnd

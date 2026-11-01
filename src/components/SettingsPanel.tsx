@@ -677,6 +677,26 @@ export function SettingsPanel({
                     label={t("settings.fileSearch")}
                   />
                 </div>
+
+                <div className="settings-row">
+                  <div className="settings-copy">
+                    <div className="settings-label">
+                      {t("settings.clipboardHistory")}
+                    </div>
+                    <div className="settings-description">
+                      {t("settings.clipboardHistoryHint")}
+                    </div>
+                  </div>
+                  <Toggle
+                    checked={settings.clipboardHistory}
+                    onClick={() =>
+                      onChange({
+                        clipboardHistory: !settings.clipboardHistory,
+                      })
+                    }
+                    label={t("settings.clipboardHistory")}
+                  />
+                </div>
               </div>
             </>
           ) : null}

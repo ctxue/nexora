@@ -1,7 +1,8 @@
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AnimatedHeight } from "./components/AnimatedHeight";
+import { ClipboardList } from "./components/ClipboardList";
 import { Footer } from "./components/Footer";
 import { QuickActions } from "./components/QuickActions";
 import { RecentList } from "./components/RecentList";
@@ -10,6 +11,8 @@ import { SearchBar } from "./components/SearchBar";
 import type { AppEntry } from "./core/types";
 import { useManualApps } from "./features/apps/useManualApps";
 import { useCommands } from "./features/commands/useCommands";
+import { useClipboard } from "./features/clipboard/useClipboard";
+import { filterClipboardEntries } from "./features/clipboard/filter";
 import { useIndexFolders } from "./features/indexes/useIndexFolders";
 import { useLauncher } from "./features/launcher/useLauncher";
 import { usePlugins } from "./features/plugins/usePlugins";
@@ -35,7 +38,10 @@ function Launcher({ settings }: { settings: Settings }) {
   const { apps: manualApps } = useManualApps();
   const { folders: indexFolders, updatedAt: indexUpdatedAt } = useIndexFolders();
   const { plugins, disabled: disabledPlugins } = usePlugins();
+  const clipboard = useClipboard();
   const [indexedApps, setIndexedApps] = useState<AppEntry[]>([]);
+  const [clipboardOpen, setClipboardOpen] = useState(false);
+  const [clipboardSelected, setClipboardSelected] = useState(0);
 
   useEffect(() => {
     if (indexFolders.length === 0) {
@@ -69,6 +75,11 @@ function Launcher({ settings }: { settings: Settings }) {
     void platform.openSettingsWindow();
   }, []);
 
+  const openClipboard = useCallback(() => {
+    setClipboardOpen(true);
+    setClipboardSelected(0);
+  }, []);
+
   const {
     query,
     scope,
@@ -100,7 +111,57 @@ function Launcher({ settings }: { settings: Settings }) {
     plugins,
     disabledPlugins,
     onOpenSettings: openSettings,
+    onOpenClipboard: openClipboard,
+    searchSuspended: clipboardOpen,
   });
+
+  const visibleClipboardEntries = useMemo(
+    () => filterClipboardEntries(clipboard.entries, query),
+    [clipboard.entries, query],
+  );
+
+  const closeClipboard = useCallback(() => {
+    setClipboardOpen(false);
+    setClipboardSelected(0);
+    clearQuery();
+  }, [clearQuery]);
+
+  const copyClipboardEntry = useCallback(
+    async (entry: (typeof visibleClipboardEntries)[number]) => {
+      try {
+        await clipboard.copy(entry.text);
+        closeClipboard();
+        hide();
+      } catch {
+        showToast(t("toast.actionFailed"));
+      }
+    },
+    [clipboard, closeClipboard, hide, showToast, t],
+  );
+
+  const moveClipboardSelection = useCallback(
+    (delta: number) => {
+      if (visibleClipboardEntries.length === 0) return;
+      setClipboardSelected((current) => {
+        const next = current + delta;
+        return Math.max(0, Math.min(next, visibleClipboardEntries.length - 1));
+      });
+    },
+    [visibleClipboardEntries.length],
+  );
+
+  useEffect(() => {
+    setClipboardSelected((current) => {
+      if (visibleClipboardEntries.length === 0) return 0;
+      return Math.min(current, visibleClipboardEntries.length - 1);
+    });
+  }, [visibleClipboardEntries.length]);
+
+  useEffect(() => {
+    void platform
+      .setClipboardCapture(settings.clipboardHistory)
+      .catch(() => {});
+  }, [settings.clipboardHistory]);
 
   useEffect(() => {
     void platform.setTrayLanguage(settings.language).catch(() => {
@@ -137,6 +198,24 @@ function Launcher({ settings }: { settings: Settings }) {
   }, [focusSearchInput]);
 
   useEffect(() => {
+    let mounted = true;
+    let unlisten: (() => void) | undefined;
+    void platform.onLauncherHidden(() => {
+      if (mounted) {
+        setClipboardOpen(false);
+        setClipboardSelected(0);
+      }
+    }).then((dispose) => {
+      if (mounted) unlisten = dispose;
+      else dispose();
+    });
+    return () => {
+      mounted = false;
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.isComposing || event.keyCode === 229) return;
 
@@ -151,6 +230,38 @@ function Launcher({ settings }: { settings: Settings }) {
         inputRef.current?.focus();
         inputRef.current?.select();
         return;
+      }
+
+      if (clipboardOpen) {
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          moveClipboardSelection(1);
+          return;
+        }
+
+        if (event.key === "ArrowUp") {
+          event.preventDefault();
+          moveClipboardSelection(-1);
+          return;
+        }
+
+        if (event.key === "Enter") {
+          event.preventDefault();
+          const entry = visibleClipboardEntries[clipboardSelected];
+          if (entry) void copyClipboardEntry(entry);
+          return;
+        }
+
+        if (event.key === "Escape") {
+          event.preventDefault();
+          if (query.trim()) {
+            clearQuery();
+          } else {
+            closeClipboard();
+          }
+          inputRef.current?.focus();
+          return;
+        }
       }
 
       if (event.key === "ArrowDown") {
@@ -189,13 +300,19 @@ function Launcher({ settings }: { settings: Settings }) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
     clearQuery,
+    clipboardOpen,
+    clipboardSelected,
+    closeClipboard,
     confirmSelection,
+    copyClipboardEntry,
     hide,
     moveSelection,
+    moveClipboardSelection,
     openSettings,
     query,
     scope,
     setQuery,
+    visibleClipboardEntries,
   ]);
 
   useEffect(() => {
@@ -203,7 +320,17 @@ function Launcher({ settings }: { settings: Settings }) {
   }, [focusSearchInput, scope]);
 
   const compactMode =
-    settings.windowMode === "compact" && query.trim().length === 0;
+    settings.windowMode === "compact" &&
+    query.trim().length === 0 &&
+    !clipboardOpen;
+
+  const activeScope = clipboardOpen
+    ? {
+        title: t("clipboard.history"),
+        keyword: "clipboard",
+        icon: "clipboard" as const,
+      }
+    : scope;
 
   return (
     <MotionConfig reducedMotion="user">
@@ -226,7 +353,9 @@ function Launcher({ settings }: { settings: Settings }) {
             shortcut={settings.shortcut}
             inputRef={inputRef}
             onChange={(value) => {
-              if (scope) {
+              if (clipboardOpen) {
+                setQuery(value);
+              } else if (scope) {
                 setQuery(`${scope.keyword} ${value}`);
               } else {
                 setQuery(value);
@@ -234,16 +363,19 @@ function Launcher({ settings }: { settings: Settings }) {
             }}
             onDragStart={() => void platform.startDragging()}
             onClear={() => {
-              if (scope) {
+              if (clipboardOpen) {
+                clearQuery();
+              } else if (scope) {
                 setQuery(`${scope.keyword} `);
               } else {
                 clearQuery();
               }
               inputRef.current?.focus();
             }}
-            scope={scope}
+            scope={activeScope}
             onClearScope={() => {
-              setQuery("");
+              if (clipboardOpen) closeClipboard();
+              else setQuery("");
               inputRef.current?.focus();
             }}
           />
@@ -253,7 +385,21 @@ function Launcher({ settings }: { settings: Settings }) {
               <div className="search-divider" />
 
               <AnimatedHeight>
-                {query.trim() ? (
+                {clipboardOpen ? (
+                  <ClipboardList
+                    entries={visibleClipboardEntries}
+                    selectedIndex={clipboardSelected}
+                    onSelect={setClipboardSelected}
+                    onCopy={(entry) => void copyClipboardEntry(entry)}
+                    onTogglePin={(entry) => void clipboard.togglePin(entry.id)}
+                    onRemove={(entry) => void clipboard.remove(entry.id)}
+                    onClear={() => {
+                      if (window.confirm(t("clipboard.confirmClear"))) {
+                        void clipboard.clear();
+                      }
+                    }}
+                  />
+                ) : query.trim() ? (
                   <ResultList
                     groups={groups}
                     query={query}

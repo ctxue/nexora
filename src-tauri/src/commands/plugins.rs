@@ -145,12 +145,7 @@ impl PluginProcess {
         })
     }
 
-    fn request(
-        &mut self,
-        method: &str,
-        params: Value,
-        timeout: Duration,
-    ) -> Result<Value, String> {
+    fn request(&mut self, method: &str, params: Value, timeout: Duration) -> Result<Value, String> {
         self.next_id += 1;
         let id = self.next_id;
 
@@ -192,9 +187,7 @@ impl PluginProcess {
                     }
                     return Ok(value.get("result").cloned().unwrap_or(Value::Null));
                 }
-                Err(RecvTimeoutError::Timeout) => {
-                    return Err("Plugin timed out".to_string())
-                }
+                Err(RecvTimeoutError::Timeout) => return Err("Plugin timed out".to_string()),
                 Err(RecvTimeoutError::Disconnected) => {
                     return Err("Plugin process exited".to_string())
                 }
@@ -346,7 +339,7 @@ pub fn list_plugins(host: State<'_, PluginHost>) -> Vec<PluginManifest> {
         }
     }
 
-    plugins.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    plugins.sort_by_key(|a| a.name.to_lowercase());
     plugins
 }
 
@@ -493,9 +486,16 @@ mod tests {
         std::fs::write(dir.join("plugin.ps1"), body).expect("write test plugin");
     }
 
+    fn test_dir(name: &str) -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join("test-tmp")
+            .join(format!("{name}-{}", std::process::id()))
+    }
+
     #[test]
     fn talks_json_rpc_with_a_plugin_process() {
-        let dir = std::env::temp_dir().join(format!("nexora-plugin-{}", std::process::id()));
+        let dir = test_dir("nexora-plugin");
         std::fs::create_dir_all(&dir).expect("create plugin dir");
         write_script(
             &dir,
@@ -511,11 +511,7 @@ $response = '{"jsonrpc":"2.0","id":' + $message.id + ',"result":{"items":[{"id":
         let manifest = test_manifest();
         let mut process = PluginProcess::spawn(&manifest, &dir).expect("spawn plugin");
         let value = process
-            .request(
-                "search",
-                json!({ "query": "x" }),
-                Duration::from_secs(10),
-            )
+            .request("search", json!({ "query": "x" }), Duration::from_secs(10))
             .expect("plugin response");
         process.shutdown();
         std::fs::remove_dir_all(&dir).ok();
@@ -529,7 +525,7 @@ $response = '{"jsonrpc":"2.0","id":' + $message.id + ',"result":{"items":[{"id":
 
     #[test]
     fn installs_a_plugin_folder() {
-        let root = std::env::temp_dir().join(format!("nexora-install-{}", std::process::id()));
+        let root = test_dir("nexora-install");
         let source = root.join("source").join("com.nexora.test.hello");
         std::fs::create_dir_all(&source).expect("create source");
         std::fs::write(
@@ -559,7 +555,7 @@ $response = '{"jsonrpc":"2.0","id":' + $message.id + ',"result":{"items":[{"id":
 
     #[test]
     fn times_out_when_a_plugin_never_answers() {
-        let dir = std::env::temp_dir().join(format!("nexora-plugin-slow-{}", std::process::id()));
+        let dir = test_dir("nexora-plugin-slow");
         std::fs::create_dir_all(&dir).expect("create plugin dir");
         write_script(&dir, "Start-Sleep -Seconds 5\n");
 

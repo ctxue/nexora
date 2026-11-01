@@ -17,6 +17,7 @@ const SETTINGS_FIELDS = [
   "showRecent",
   "maxRecent",
   "fileSearch",
+  "clipboardHistory",
   "launchAtStartup",
   "windowMode",
   "fontFamily",

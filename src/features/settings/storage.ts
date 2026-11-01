@@ -59,6 +59,10 @@ export function normalizeSettings(parsed: unknown): Settings {
       typeof candidate.fileSearch === "boolean"
         ? candidate.fileSearch
         : DEFAULT_SETTINGS.fileSearch,
+    clipboardHistory:
+      typeof candidate.clipboardHistory === "boolean"
+        ? candidate.clipboardHistory
+        : DEFAULT_SETTINGS.clipboardHistory,
     launchAtStartup:
       typeof candidate.launchAtStartup === "boolean"
         ? candidate.launchAtStartup

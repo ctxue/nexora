@@ -53,9 +53,9 @@ fn looks_like_main_executable(path: &Path, stem: &str) -> bool {
         current = directory.parent();
     }
 
-    folders.iter().any(|folder| {
-        folder == &token || (token.len() >= 3 && folder.contains(&token))
-    })
+    folders
+        .iter()
+        .any(|folder| folder == &token || (token.len() >= 3 && folder.contains(&token)))
 }
 
 /// Adds the single executable the user picked.

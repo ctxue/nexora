@@ -78,8 +78,7 @@ pub fn browsers() -> Vec<BrowserInfo> {
                 .filter(|value| !value.trim().is_empty() && !value.starts_with('@'))
                 .unwrap_or_else(|| id.clone());
 
-            let Ok(command) = client.open_subkey_with_flags(r"shell\open\command", KEY_READ)
-            else {
+            let Ok(command) = client.open_subkey_with_flags(r"shell\open\command", KEY_READ) else {
                 continue;
             };
             let Ok(raw) = command.get_value::<String, _>("") else {
@@ -123,7 +122,7 @@ pub fn browsers() -> Vec<BrowserInfo> {
         push_unique(&mut found, path, name, path);
     }
 
-    found.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    found.sort_by_key(|a| a.name.to_lowercase());
     found
 }
 
@@ -140,8 +139,7 @@ pub fn open_url(url: String, browser: Option<String>, new_window: bool) -> Resul
         return Err("Only http(s) URLs can be opened".to_string());
     }
 
-    let Some(exe) = browser.filter(|value| !value.trim().is_empty() && value != "default")
-    else {
+    let Some(exe) = browser.filter(|value| !value.trim().is_empty() && value != "default") else {
         return open::that(&url).map_err(|error| format!("Could not open URL: {error}"));
     };
 
@@ -201,6 +199,9 @@ mod tests {
         for browser in &found {
             println!("browser: {} -> {}", browser.name, browser.exe);
         }
-        assert!(!found.is_empty(), "expected at least one registered browser");
+        assert!(
+            !found.is_empty(),
+            "expected at least one registered browser"
+        );
     }
 }

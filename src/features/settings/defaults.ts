@@ -21,6 +21,7 @@ export const DEFAULT_SETTINGS: Settings = {
   showRecent: true,
   maxRecent: 5,
   fileSearch: true,
+  clipboardHistory: true,
   launchAtStartup: false,
   windowMode: "expanded",
   fontFamily: "system",

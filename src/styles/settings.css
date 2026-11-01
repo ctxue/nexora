@@ -1,4 +1,4 @@
-﻿/* Everything drawn inside the settings window. */
+/* Everything drawn inside the settings window. */
 
 .settings-window {
   width: 100%;
@@ -586,7 +586,9 @@
 .toggle {
   width: 34px;
   height: 20px;
-  flex: 0 0 34px;
+  /* Do not use a px flex-basis: in a column layout it would stretch the
+     toggle's height (the command editor's "New window" field). */
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   padding: 2px;

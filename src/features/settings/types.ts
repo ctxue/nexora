@@ -19,6 +19,7 @@ export interface Settings {
   showRecent: boolean;
   maxRecent: number;
   fileSearch: boolean;
+  clipboardHistory: boolean;
   launchAtStartup: boolean;
   windowMode: WindowMode;
   fontFamily: FontFamily;

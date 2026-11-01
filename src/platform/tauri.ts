@@ -53,6 +53,13 @@ export interface PluginItem {
   action: PluginAction | null;
 }
 
+export interface ClipboardEntry {
+  id: string;
+  text: string;
+  createdAt: number;
+  pinned: boolean;
+}
+
 export const platform = {
   listApps(): Promise<AppEntry[]> {
     return invoke<AppEntry[]>("list_apps");
@@ -142,6 +149,30 @@ export const platform = {
     return invoke<PluginItem[]>("search_plugin", { id, query, keyword });
   },
 
+  listClipboard(): Promise<ClipboardEntry[]> {
+    return invoke<ClipboardEntry[]>("list_clipboard");
+  },
+
+  copyClipboard(text: string): Promise<void> {
+    return invoke<void>("copy_clipboard", { text });
+  },
+
+  toggleClipboardPin(id: string): Promise<void> {
+    return invoke<void>("toggle_clipboard_pin", { id });
+  },
+
+  deleteClipboardItem(id: string): Promise<void> {
+    return invoke<void>("delete_clipboard_item", { id });
+  },
+
+  clearClipboard(): Promise<void> {
+    return invoke<void>("clear_clipboard");
+  },
+
+  setClipboardCapture(enabled: boolean): Promise<void> {
+    return invoke<void>("set_clipboard_capture", { enabled });
+  },
+
   launchProgram(program: string, args: string): Promise<void> {
     return invoke<void>("launch_program", { program, args });
   },
@@ -229,5 +260,9 @@ export const platform = {
 
   onFilesIndexed(handler: (count: number) => void): Promise<UnlistenFn> {
     return listen<number>("files-indexed", (event) => handler(event.payload));
+  },
+
+  onClipboardUpdated(handler: () => void): Promise<UnlistenFn> {
+    return listen("clipboard-updated", handler);
   },
 };

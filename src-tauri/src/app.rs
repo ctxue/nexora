@@ -5,6 +5,7 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tauri_plugin_window_state::StateFlags as WindowStateFlags;
 
 use crate::{
+    clipboard::{start_monitor, ClipboardHistory},
     commands,
     config::{
         AUTOSTART_FLAG, DEFAULT_SHORTCUT, EVENT_LAUNCHER_HIDDEN, FALLBACK_SHORTCUT, FOCUS_GRACE,
@@ -75,6 +76,10 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let plugin_root = app.path().app_data_dir()?.join("plugins");
     std::fs::create_dir_all(&plugin_root)?;
     app.manage(commands::plugins::PluginHost::new(plugin_root));
+    let clipboard_path = app.path().app_data_dir()?.join("clipboard-history.json");
+    let clipboard = ClipboardHistory::new(clipboard_path);
+    app.manage(clipboard.clone());
+    start_monitor(app.handle().clone(), clipboard);
 
     if let Some(settings) = app.get_webview_window(SETTINGS_WINDOW) {
         let _ = settings.hide();
@@ -193,6 +198,12 @@ pub fn run() {
             commands::plugins::stop_plugin,
             commands::plugins::plugins_dir,
             commands::plugins::search_plugin,
+            commands::clipboard::list_clipboard,
+            commands::clipboard::copy_clipboard,
+            commands::clipboard::toggle_clipboard_pin,
+            commands::clipboard::delete_clipboard_item,
+            commands::clipboard::clear_clipboard,
+            commands::clipboard::set_clipboard_capture,
             commands::window::quit_app,
             commands::settings::open_settings_window,
             commands::shortcuts::set_shortcut_capture,

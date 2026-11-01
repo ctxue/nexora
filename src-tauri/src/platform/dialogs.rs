@@ -15,8 +15,8 @@ use windows::{
                 OFN_OVERWRITEPROMPT, OFN_PATHMUSTEXIST, OPENFILENAMEW,
             },
             Shell::{
-                SHBrowseForFolderW, SHGetPathFromIDListW, BIF_NEWDIALOGSTYLE,
-                BIF_RETURNONLYFSDIRS, BROWSEINFOW,
+                SHBrowseForFolderW, SHGetPathFromIDListW, BIF_NEWDIALOGSTYLE, BIF_RETURNONLYFSDIRS,
+                BROWSEINFOW,
             },
         },
     },
@@ -170,6 +170,9 @@ pub fn ask_folder() -> Option<PathBuf> {
         return None;
     }
 
-    let end = path.iter().position(|unit| *unit == 0).unwrap_or(path.len());
+    let end = path
+        .iter()
+        .position(|unit| *unit == 0)
+        .unwrap_or(path.len());
     Some(PathBuf::from(String::from_utf16_lossy(&path[..end])))
 }

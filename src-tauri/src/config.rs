@@ -91,6 +91,7 @@ pub const EVENT_LAUNCHER_SHOWN: &str = "launcher-shown";
 pub const EVENT_LAUNCHER_HIDDEN: &str = "launcher-hidden";
 pub const EVENT_FILES_INDEXED: &str = "files-indexed";
 pub const EVENT_SHORTCUT_CAPTURED: &str = "shortcut-captured";
+pub const EVENT_CLIPBOARD_UPDATED: &str = "clipboard-updated";
 
 /// Items that look like shortcuts but are never worth launching.
 pub const JUNK_SHORTCUT_MARKERS: [&str; 14] = [

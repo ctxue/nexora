@@ -8,7 +8,7 @@
 
 启动器搜索应用、文件与命令，结果按类别分组；命令模式可以用「关键词 + 空格」把输入变成一个作用域标签；设置窗口覆盖外观、命令、应用、插件与配置备份。
 
-> 截图取自 v0.2.2 开发版，实际界面以当前构建为准。
+> 截图取自 v0.3.0 开发版，实际界面以当前构建为准。
 
 <table>
   <tr>
@@ -62,6 +62,7 @@
 - 已安装应用：同时枚举 Windows **AppsFolder**（UWP / MSIX / 经典应用）与开始菜单 `.lnk`
 - 本机文件：桌面 / 文档 / 下载 / 图片，最多 20,000 条，内存索引
 - 磁盘：输入 `D` / `D:` / `D://` / `D盘` 直接打开对应磁盘根目录，支持固定 / 可移动 / 网络 / 内存盘
+- 剪贴板历史：自动记录最近复制的文本，可搜索、重新复制、固定、删除和清空
 - 内置命令：打开下载、桌面、文档、此电脑、回收站，刷新索引，打开设置，退出
 - 模糊匹配：大小写不敏感、单词首字母（`vsc` → Visual Studio Code）、有序子序列、中文拼音（`wx` → 微信）
 - 真实 Windows 图标：通过 Shell 提取并裁剪空白边距
@@ -139,8 +140,8 @@ Compress-Archive -Path src-tauri/target/release/nexora.exe `
 
 ```text
 release/
-├─ NEXORA_0.2.2_x64-setup.exe    # 双击安装
-└─ NEXORA_0.2.2_portable.zip     # 解压后直接运行 nexora.exe
+├─ NEXORA_0.3.0_x64-setup.exe    # 双击安装
+└─ NEXORA_0.3.0_portable.zip     # 解压后直接运行 nexora.exe
 ```
 
 发给别人时需要提醒两点：
@@ -175,7 +176,11 @@ release/
 - 设置 → 应用 → **文件索引**：添加任意文件夹（比如 `D:\Soft`），扫描到的绿色软件会合并进「应用」搜索结果。
 - 设置 → 命令：自定义网页搜索 / 打开网址 / 打开文件 / 运行程序；在启动器输入「关键词 + 空格」触发。
 - 设置 → 插件（Beta）：安装包含 `plugin.json` 的文件夹；示例见 [`examples/plugins/ip`](examples/plugins/ip)，协议见[插件开发指南](docs/plugin-development.md)。
+- 设置 → 通用 → **剪贴板历史**：可暂停记录；已有记录不会被自动删除。
+- 在启动器输入 `剪贴板` 或 `clipboard` 打开历史，输入内容可筛选，回车重新复制。
 - 开机启动写入 Windows 的 Run 注册项，登录后**后台静默启动**（只显示托盘图标）。
+
+剪贴板历史最多保留 200 条、单条最多 32,000 个字符，只记录 Unicode 文本。数据以明文 JSON 保存在应用数据目录的 `clipboard-history.json`，不会上传网络，也不会包含在配置导出中；处理敏感信息时可在设置中暂停记录。
 
 ## 目录结构
 
@@ -197,6 +202,7 @@ release/
 | `components/AppGlyph.tsx` / `FileGlyph.tsx` | 无真实图标时的字母与文件类型占位 |
 | `components/BrandMark.tsx` | 品牌图形（镜环标记） |
 | `components/Footer.tsx` | 底部按键提示与索引状态 |
+| `components/ClipboardList.tsx` | 剪贴板历史列表与固定 / 删除操作 |
 | `components/AnimatedHeight.tsx` | 结果区域高度动画 |
 | `components/SettingsPanel.tsx` | 设置页布局：侧边栏 + 页面内容 |
 | `components/settings/sections.ts` | 侧边栏条目、主题选项、字体列表等**配置** |
@@ -218,6 +224,8 @@ release/
 | `features/apps/useManualApps.ts` | 手动应用 Hook |
 | `features/indexes/storage.ts` | 文件索引文件夹的存储与校验 |
 | `features/indexes/useIndexFolders.ts` | 文件索引 Hook：添加 / 移除 / 重扫 |
+| `features/clipboard/filter.ts` | 剪贴板筛选、置顶排序与预览生成 |
+| `features/clipboard/useClipboard.ts` | 剪贴板列表、复制、固定、删除与清空 |
 | `features/plugins/usePlugins.ts` | 插件列表、启停状态、安装 / 卸载 |
 | `features/settings/types.ts` | `Settings` 与各枚举值（主题 / 字体 / 窗口模式） |
 | `features/settings/defaults.ts` | 默认设置与各滑块的取值范围 |
@@ -239,11 +247,13 @@ release/
 | `main.rs` | 二进制入口，调用 `nexora_lib::run()` |
 | `lib.rs` | 模块树声明（不含逻辑，方便查阅结构） |
 | `app.rs` | Tauri 启动：插件、托管状态、`setup`、窗口事件、命令注册 |
+| `clipboard.rs` | 剪贴板监听、文本读写、去重、置顶、上限与本地持久化 |
 | `config.rs` | 全部常量：索引上限、超时、DWM 颜色、窗口标签、事件名、过滤词表 |
 | `models.rs` | 与前端交换的数据结构（camelCase 序列化） |
 | `state.rs` | Tauri 托管状态：文件索引、启动器状态、当前快捷键 |
 | `commands/apps.rs` | 应用列表、快捷路径、文件索引、搜索、图标、打开路径 |
 | `commands/browsers.rs` | 已安装浏览器枚举、按指定浏览器打开 URL |
+| `commands/clipboard.rs` | 剪贴板历史查询、复制、固定、删除、清空与记录开关 |
 | `commands/library.rs` | 手动应用 / 文件夹选择、便携应用扫描、文件索引扫描、启动程序 |
 | `commands/plugins.rs` | 插件安装 / 卸载、manifest 校验、进程管理、JSON-RPC |
 | `commands/settings.rs` | 打开设置窗口、标题栏主题、配置导入导出、重置位置、托盘语言 |
@@ -303,13 +313,13 @@ release/
 
 ## 版本历史
 
-见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **0.2.2**。
+见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **0.3.0**。
 
 ## 已知限制
 
 - 普通文件搜索是桌面 / 文档 / 下载 / 图片的全量内存索引，尚未使用 USN/MFT 增量方案
 - 「文件索引」只收集文件夹里的可执行程序（绿色软件），不索引普通文档
-- 剪贴板历史仍是占位入口
+- 剪贴板历史只支持文本，不记录图片、文件列表或富文本格式
 - 插件为 **Beta**：只支持 `search`，没有宿主 API（存储 / 剪贴板）、自定义 UI、签名与市场；插件进程拥有当前用户权限
 - 没有自动更新与代码签名
 
@@ -317,7 +327,7 @@ release/
 
 欢迎 Issue 与 PR。提交前请确保：
 
-- `pnpm build` 与 `cargo check` 通过；
+- `pnpm test`、`pnpm build`、`cargo test` 与 `cargo clippy` 通过；
 - 界面改动附截图，并尽量复用 `docs/screenshots/` 的构图；
 - 新命令 / 插件附最小示例，并同步 `i18n.tsx` 的中英文案。
 
