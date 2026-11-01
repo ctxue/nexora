@@ -1,0 +1,38 @@
+//! Payloads exchanged with the frontend (serialized with camelCase keys).
+
+use serde::Serialize;
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppEntry {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+    pub source: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileEntry {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+    pub extension: String,
+    pub parent: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickPaths {
+    pub home: String,
+    pub desktop: String,
+    pub documents: String,
+    pub downloads: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShortcutStatus {
+    pub current: Option<String>,
+    pub error: Option<String>,
+}

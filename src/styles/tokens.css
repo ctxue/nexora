@@ -1,0 +1,205 @@
+/* Design tokens: colors, spacing, and the themable surfaces. */
+
+/* Shared by the settings window chrome and its native title bar
+   (see SETTINGS_CHROME_COLOR in src-tauri/src/lib.rs). */
+:root {
+  color-scheme: light;
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text",
+    "Segoe UI", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
+  font-family: var(--font-ui);
+  color: var(--text);
+  background: transparent;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+
+  /* Shape */
+  --launcher-radius: 8px;
+
+  /* Launcher drop shadow: alphas are scaled by the shadow slider (0–1). */
+  --launcher-shadow-1: 0.46;
+  --launcher-shadow-2: 0.24;
+  --launcher-shadow-3: 0.1;
+  --shadow-scale: 0.7;
+
+  /* Typography scale: every font size in this file is multiplied by it. */
+  --font-scale: 1;
+
+  /* Text */
+  --text: #18181b;
+  --text-title: #27272a;
+  --text-soft: #3f3f46;
+  --text-medium: #52525b;
+  --muted: #71717a;
+  --text-subtle: #8b8b93;
+  --subtle: #a1a1aa;
+  --text-ghost: #b4b4bb;
+
+  /* Surfaces */
+  --surface: #ffffff;
+  --surface-subtle: #fafafa;
+  --surface-hover: #f7f7f8;
+  --surface-selected: #f4f4f5;
+  --surface-bar: #e4e4e8;
+
+  /* Lines */
+  --line: #f0f0f2;
+  --line-strong: #e4e4e7;
+  --line-soft: #ececef;
+  --line-muted: #e9e9ec;
+  --line-emphasis: #d4d4d8;
+
+  /* Controls */
+  --control-bg: #ffffff;
+  --control-bg-hover: #f8f8f8;
+  --key-bg: #fafafa;
+  --toggle-off: #e4e4e7;
+  --toggle-on: #18181b;
+  --knob-off: #ffffff;
+  --knob-on: #ffffff;
+
+  /* Chrome and effects */
+  --settings-chrome: #ededf0;
+  --card-ring: transparent;
+  --caret: #3f3f46;
+  --highlight: rgba(255, 255, 255, 0.8);
+  --nav-hover: rgba(255, 255, 255, 0.58);
+  --shadow-rgb: 15, 23, 42;
+
+  /* Decorative */
+  --avatar-from: #f7f7f8;
+  --avatar-to: #e7e7ea;
+  --preview-from: #f1f1f4;
+  --preview-mid: #fafafa;
+  --preview-to: #e9e9ee;
+
+  /* Semantic */
+  --accent: #4f46e5;
+  --accent-bg: #eef2ff;
+  --accent-border: #c7d2fe;
+  --selection-text: #1e1b4b;
+  --selection-bg: #c7d2fe;
+  --danger-text: #b91c1c;
+  --danger-text-strong: #991b1b;
+  --danger-bg: #fef2f2;
+  --danger-border: #fecaca;
+  --toast-bg: rgba(24, 24, 27, 0.94);
+  --toast-text: #fafafa;
+  --toast-border: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Text */
+  --text: #f4f4f5;
+  --text-title: #e4e4e7;
+  --text-soft: #d4d4d8;
+  --text-medium: #b4b4bb;
+  --muted: #a1a1aa;
+  --text-subtle: #8b8b93;
+  --subtle: #71717a;
+  --text-ghost: #5b5b65;
+
+  /* Surfaces */
+  --surface: #1b1b1f;
+  --surface-subtle: #232327;
+  --surface-hover: #26262c;
+  --surface-selected: #2c2c33;
+  --surface-bar: #3a3a42;
+
+  /* Lines */
+  --line: #26262c;
+  --line-strong: #33333a;
+  --line-soft: #2b2b31;
+  --line-muted: #2e2e35;
+  --line-emphasis: #4a4a53;
+
+  /* Controls */
+  --control-bg: #26262b;
+  --control-bg-hover: #2d2d34;
+  --key-bg: #2a2a30;
+  --toggle-off: #3f3f46;
+  --toggle-on: #e4e4e7;
+  --knob-off: #d4d4d8;
+  --knob-on: #1b1b1f;
+
+  /* Chrome and effects */
+  --settings-chrome: #131316;
+  --card-ring: rgba(255, 255, 255, 0.07);
+  --caret: #d4d4d8;
+  --highlight: rgba(255, 255, 255, 0.05);
+  --nav-hover: rgba(255, 255, 255, 0.05);
+  --shadow-rgb: 0, 0, 0;
+
+  /* A black shadow needs more weight to read against a dark desktop. */
+  --launcher-shadow-1: 0.95;
+  --launcher-shadow-2: 0.6;
+  --launcher-shadow-3: 0.35;
+
+  /* Decorative */
+  --avatar-from: #2b2b31;
+  --avatar-to: #1d1d21;
+  --preview-from: #2b2b31;
+  --preview-mid: #232327;
+  --preview-to: #1d1d21;
+
+  /* Semantic */
+  --accent: #a5b4fc;
+  --accent-bg: #232147;
+  --accent-border: #3730a3;
+  --selection-text: #eef2ff;
+  --selection-bg: #4338ca;
+  --danger-text: #fca5a5;
+  --danger-text-strong: #fecaca;
+  --danger-bg: #2a1618;
+  --danger-border: #4a2225;
+  --toast-bg: rgba(63, 63, 70, 0.96);
+  --toast-text: #fafafa;
+  --toast-border: rgba(255, 255, 255, 0.12);
+}
+
+:root[data-font="inter"] {
+  --font-ui: "Inter Variable", "Inter", "SF Pro Text",
+    "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "PingFang SC",
+    system-ui, sans-serif;
+}
+
+:root[data-font="geist"] {
+  --font-ui: "Geist Variable", "Geist", "Segoe UI Variable Text", "Segoe UI",
+    "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
+}
+
+:root[data-font="system"] {
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text",
+    "Segoe UI", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
+}
+
+/* ---------- Dark-theme details ---------- */
+:root[data-theme="dark"] .app-glyph,
+:root[data-theme="dark"] .file-glyph {
+  color: color-mix(in srgb, var(--glyph-color) 58%, #ffffff);
+  background: color-mix(in srgb, var(--glyph-color) 17%, transparent);
+  border-color: color-mix(in srgb, var(--glyph-color) 26%, transparent);
+}
+
+:root[data-theme="dark"] .group-label {
+  color: color-mix(in srgb, var(--group-color) 58%, #ffffff);
+}
+
+:root[data-theme="dark"] .group-dot {
+  background: color-mix(in srgb, var(--group-color) 58%, #ffffff);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--group-color) 20%, transparent);
+}
+
+:root[data-theme="dark"] .brand-mark {
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
+}
+
+:root[data-theme="dark"] .settings-content {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+:root[data-theme="dark"] .settings-nav-item.is-active {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}

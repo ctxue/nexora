@@ -1,0 +1,22 @@
+node_modules/
+dist/
+src-tauri/target/
+.vite/
+*.log
+.DS_Store
+Thumbs.db
+docs/screenshot-*.png
+docs/anim.mp4
+docs/anim-frames/
+docs/frontend-headless.png
+docs/printwindow.png
+docs/icon-zoom.png
+*.tsbuildinfo
+release/
+
+# 本地 IDE 配置
+.idea/
+
+# 永远不要把安装包 / 可执行文件提交进仓库（用 GitHub Releases 分发）
+*.exe
+*.msi

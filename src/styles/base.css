@@ -1,0 +1,117 @@
+/* Reset, document defaults, and shell-level chrome. */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: transparent;
+}
+
+body {
+  overflow: hidden;
+  color: var(--text);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  cursor: default;
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: none;
+}
+
+input::selection {
+  color: var(--selection-text);
+  background: var(--selection-bg);
+}
+
+.shell {
+  width: 100%;
+  height: 100%;
+  padding: 20px 0 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow: hidden;
+  background: transparent;
+}
+
+@keyframes caret-blink {
+  0%,
+  48% {
+    opacity: 1;
+  }
+  49%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.toast {
+  position: fixed;
+  right: 0;
+  bottom: 18px;
+  left: 0;
+  z-index: 20;
+  width: fit-content;
+  max-width: min(560px, 86vw);
+  margin: 0 auto;
+  padding: 8px 12px;
+  color: var(--toast-text);
+  background: var(--toast-bg);
+  border: 1px solid var(--toast-border);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(var(--shadow-rgb), 0.10);
+  font-size: calc(11.5px * var(--font-scale));
+  font-weight: 450;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  text-align: center;
+  backdrop-filter: blur(8px);
+}
+
+.spin {
+  animation: spin 1.1s linear infinite;
+}
+
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

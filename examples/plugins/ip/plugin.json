@@ -1,0 +1,18 @@
+{
+  "id": "com.nexora.samples.ip",
+  "name": "IP 查询",
+  "version": "1.0.0",
+  "author": "NEXORA",
+  "description": "输入 ip 8.8.8.8，回车打开归属地页面",
+  "entry": "powershell.exe",
+  "args": [
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    "plugin.ps1"
+  ],
+  "keywords": ["ip"],
+  "permissions": ["network"],
+  "timeoutMs": 3000
+}

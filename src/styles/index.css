@@ -1,0 +1,8 @@
+/* NEXORA stylesheet entry point.
+   Import order matters: tokens define the variables, base applies them to the
+   document, then each window adds its own rules. */
+
+@import "./tokens.css";
+@import "./base.css";
+@import "./launcher.css";
+@import "./settings.css";
