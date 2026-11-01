@@ -20,7 +20,7 @@
   --launcher-shadow-1: 0.46;
   --launcher-shadow-2: 0.24;
   --launcher-shadow-3: 0.1;
-  --shadow-scale: 0.7;
+  --shadow-scale: 1;
 
   /* Typography scale: every font size in this file is multiplied by it. */
   --font-scale: 1;

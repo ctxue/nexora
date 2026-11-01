@@ -8,7 +8,7 @@
 
 启动器搜索应用、文件与命令，结果按类别分组；命令模式可以用「关键词 + 空格」把输入变成一个作用域标签；设置窗口覆盖外观、命令、应用、插件与配置备份。
 
-> 截图取自 v0.2.0 开发版，实际界面以当前构建为准。
+> 截图取自 v0.2.1 开发版，实际界面以当前构建为准。
 
 <table>
   <tr>
@@ -67,7 +67,7 @@
 
 **外观与配置**
 - 主题：跟随系统 / 浅色 / 深色（原生标题栏同步换色）
-- 外观：全局文字大小 11–17px、启动器圆角 0–28px、窗口阴影 0–100%、界面字体（系统 / Inter / Geist）
+- 外观：全局文字大小 11–17px、启动器圆角 0–28px、窗口阴影 0–100%（默认 100%）、界面字体（系统 / Inter / Geist）
 - 自定义命令：关键词 + 空格触发，支持网页搜索 / 打开网址 / 打开文件或文件夹 / 运行程序，每条命令可指定浏览器
 - 文件索引：配置若干文件夹，里面的绿色软件会合并进「应用」搜索结果
 - 插件（Beta）：安装带 `plugin.json` 的插件文件夹，关键词触发、JSON-RPC 搜索、独立进程运行，可启停/卸载；协议见[插件开发指南](docs/plugin-development.md)，示例见 [`examples/plugins/ip`](examples/plugins/ip)
@@ -138,8 +138,8 @@ Compress-Archive -Path src-tauri/target/release/nexora.exe `
 
 ```text
 release/
-├─ NEXORA_0.2.0_x64-setup.exe    # 双击安装
-└─ NEXORA_0.2.0_portable.zip     # 解压后直接运行 nexora.exe
+├─ NEXORA_0.2.1_x64-setup.exe    # 双击安装
+└─ NEXORA_0.2.1_portable.zip     # 解压后直接运行 nexora.exe
 ```
 
 发给别人时需要提醒两点：
@@ -302,7 +302,7 @@ release/
 
 ## 版本历史
 
-见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **0.2.0**。
+见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **0.2.1**。
 
 ## 已知限制
 

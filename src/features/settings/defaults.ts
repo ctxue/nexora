@@ -26,7 +26,7 @@ export const DEFAULT_SETTINGS: Settings = {
   fontFamily: "system",
   theme: "system",
   radius: 8,
-  shadow: 70,
+  shadow: 100,
   fontSize: 14,
 };
 

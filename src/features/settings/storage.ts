@@ -13,6 +13,9 @@ import type { Settings } from "./types";
 /** localStorage key holding the whole configuration. */
 export const SETTINGS_KEY = "nexora.settings.v1";
 
+/** One-time marker for the 0.2.1 default-shadow change (70% -> 100%). */
+const SHADOW_DEFAULT_MIGRATION_KEY = "nexora.settings.shadow-default.v1";
+
 export function clampRadius(value: unknown): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return DEFAULT_SETTINGS.radius;
@@ -87,7 +90,22 @@ export function parseSettings(raw: string): Settings {
 export function loadSettings(): Settings {
   try {
     const raw = window.localStorage.getItem(SETTINGS_KEY);
-    return raw ? parseSettings(raw) : DEFAULT_SETTINGS;
+    if (!raw) return DEFAULT_SETTINGS;
+
+    const settings = parseSettings(raw);
+
+    // 0.2.1 raised the shipped shadow default from 70% to 100%. Older installs
+    // stored 70% even when the user never touched the slider, so migrate that
+    // value once; a deliberate 70% set afterwards is left alone.
+    if (window.localStorage.getItem(SHADOW_DEFAULT_MIGRATION_KEY) !== "1") {
+      window.localStorage.setItem(SHADOW_DEFAULT_MIGRATION_KEY, "1");
+      if (settings.shadow === 70) {
+        settings.shadow = 100;
+        saveSettings(settings);
+      }
+    }
+
+    return settings;
   } catch {
     return DEFAULT_SETTINGS;
   }
