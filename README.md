@@ -322,4 +322,4 @@ release/
 
 ## 许可
 
-许可证待定。计划开源，正式发布前会在仓库根目录补充 `LICENSE`。
+本项目采用 [MIT License](LICENSE) 开源。
