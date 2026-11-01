@@ -180,6 +180,7 @@ pub fn run() {
             commands::apps::open_path,
             commands::browsers::list_browsers,
             commands::browsers::open_url,
+            commands::drives::list_drives,
             commands::library::pick_executable,
             commands::library::pick_file,
             commands::library::pick_folder,

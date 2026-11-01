@@ -24,6 +24,7 @@ import type {
 } from "../../core/types";
 import {
   platform,
+  type DriveInfo,
   type PluginItem,
   type PluginManifest,
 } from "../../platform/tauri";
@@ -98,6 +99,7 @@ export function useLauncher({
   const { t } = useI18n();
   const [apps, setApps] = useState<AppEntry[]>([]);
   const [paths, setPaths] = useState<QuickPaths | null>(null);
+  const [drives, setDrives] = useState<DriveInfo[]>([]);
   const [query, setQueryState] = useState("");
   const [fileResults, setFileResults] = useState<FileEntry[]>([]);
   const [fileCount, setFileCount] = useState<number | null>(null);
@@ -337,7 +339,38 @@ export function useLauncher({
       return platform.openPath(path);
     };
 
+    const driveKindLabel = (kind: DriveInfo["kind"]) => {
+      if (kind === "removable") return t("drives.kind.removable");
+      if (kind === "remote") return t("drives.kind.remote");
+      if (kind === "ramdisk") return t("drives.kind.ramdisk");
+      return t("drives.kind.fixed");
+    };
+
+    const driveCommands: LauncherCommand[] = drives.map((drive) => {
+      const letter = drive.letter.toLowerCase();
+
+      return {
+        id: `drive:${drive.letter}`,
+        title: `${drive.letter}:`,
+        subtitle: driveKindLabel(drive.kind),
+        keywords: [
+          letter,
+          `${letter}:`,
+          `${letter}:/`,
+          `${letter}:\\`,
+          `${letter}://`,
+          `${letter}盘`,
+          `${letter} 盘`,
+          "drive",
+          "disk",
+        ],
+        icon: "computer",
+        run: () => platform.openPath(drive.path),
+      };
+    });
+
     return [
+      ...driveCommands,
       {
         id: "open-downloads",
         title: t("commands.openDownloads.title"),
@@ -437,7 +470,7 @@ export function useLauncher({
         run: () => platform.quit(),
       },
     ];
-  }, [onOpenSettings, paths, settings.fileSearch, showToast, t]);
+  }, [onOpenSettings, paths, drives, settings.fileSearch, showToast, t]);
 
   const quickActions = useMemo(
     () =>
@@ -479,12 +512,28 @@ export function useLauncher({
     // Commands are actions, so they come before apps and files. Custom
     // commands sit ahead of the built-in ones.
     const commandBase = base.find((group) => group.id === "command");
+    const commandItems = commandBase?.items ?? [];
+    const driveItems = commandItems.filter((item) =>
+      item.id.startsWith("drive:"),
+    );
+    const otherCommandItems = commandItems.filter(
+      (item) => !item.id.startsWith("drive:"),
+    );
     const commandGroup: ResultGroup = {
       id: "command",
       label: commandBase?.label ?? t("groups.commands"),
       color: commandBase?.color ?? "#7c3aed",
-      items: [...customItems, ...(commandBase?.items ?? [])],
+      items: [...customItems, ...otherCommandItems],
     };
+    const driveGroup: ResultGroup | null =
+      driveItems.length > 0
+        ? {
+            id: "drive",
+            label: t("groups.drives"),
+            color: "#0f766e",
+            items: driveItems,
+          }
+        : null;
     const appGroup = base.find((group) => group.id === "app");
     const fileGroup = base.find((group) => group.id === "file");
 
@@ -500,7 +549,7 @@ export function useLauncher({
           }
         : null;
 
-    return [pluginGroup, commandGroup, appGroup, fileGroup].filter(
+    return [driveGroup, pluginGroup, commandGroup, appGroup, fileGroup].filter(
       (group): group is ResultGroup => Boolean(group && group.items.length > 0),
     );
   }, [
@@ -649,6 +698,25 @@ export function useLauncher({
       }
     };
   }, [clearQuery, settings.fileSearch, showToast, t]);
+
+  // Drives can change while the launcher is hidden (USB sticks, mapped drives),
+  // so refresh them every time the window is shown.
+  useEffect(() => {
+    let mounted = true;
+
+    void platform
+      .listDrives()
+      .then((next) => {
+        if (mounted) setDrives(next);
+      })
+      .catch(() => {
+        // Drive search is optional; keep the last known list on failure.
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [showNonce]);
 
   useEffect(() => {
     const trimmed = query.trim();

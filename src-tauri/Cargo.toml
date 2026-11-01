@@ -1,6 +1,6 @@
 [package]
 name = "nexora"
-version = "0.2.1"
+version = "0.2.2"
 description = "NEXORA — one hub for apps, files, tools and workflows."
 authors = ["NEXORA"]
 edition = "2021"
@@ -31,6 +31,7 @@ windows = { version = "0.62", features = [
   "Win32_Foundation",
   "Win32_Graphics_Dwm",
   "Win32_Graphics_Gdi",
+  "Win32_Storage_FileSystem",
   "Win32_System_Com",
   "Win32_System_LibraryLoader",
   "Win32_System_Threading",

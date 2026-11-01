@@ -5,6 +5,7 @@
 
 pub mod apps;
 pub mod browsers;
+pub mod drives;
 pub mod library;
 pub mod plugins;
 pub mod settings;

@@ -15,6 +15,14 @@ export interface BrowserInfo {
   exe: string;
 }
 
+export type DriveKind = "fixed" | "removable" | "remote" | "ramdisk";
+
+export interface DriveInfo {
+  letter: string;
+  path: string;
+  kind: DriveKind;
+}
+
 export interface PluginManifest {
   id: string;
   name: string;
@@ -52,6 +60,10 @@ export const platform = {
 
   getQuickPaths(): Promise<QuickPaths> {
     return invoke<QuickPaths>("get_quick_paths");
+  },
+
+  listDrives(): Promise<DriveInfo[]> {
+    return invoke<DriveInfo[]>("list_drives");
   },
 
   startFileIndex(): Promise<boolean> {

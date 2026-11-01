@@ -8,7 +8,7 @@
 
 启动器搜索应用、文件与命令，结果按类别分组；命令模式可以用「关键词 + 空格」把输入变成一个作用域标签；设置窗口覆盖外观、命令、应用、插件与配置备份。
 
-> 截图取自 v0.2.1 开发版，实际界面以当前构建为准。
+> 截图取自 v0.2.2 开发版，实际界面以当前构建为准。
 
 <table>
   <tr>
@@ -61,6 +61,7 @@
 **搜索**
 - 已安装应用：同时枚举 Windows **AppsFolder**（UWP / MSIX / 经典应用）与开始菜单 `.lnk`
 - 本机文件：桌面 / 文档 / 下载 / 图片，最多 20,000 条，内存索引
+- 磁盘：输入 `D` / `D:` / `D://` / `D盘` 直接打开对应磁盘根目录，支持固定 / 可移动 / 网络 / 内存盘
 - 内置命令：打开下载、桌面、文档、此电脑、回收站，刷新索引，打开设置，退出
 - 模糊匹配：大小写不敏感、单词首字母（`vsc` → Visual Studio Code）、有序子序列、中文拼音（`wx` → 微信）
 - 真实 Windows 图标：通过 Shell 提取并裁剪空白边距
@@ -138,8 +139,8 @@ Compress-Archive -Path src-tauri/target/release/nexora.exe `
 
 ```text
 release/
-├─ NEXORA_0.2.1_x64-setup.exe    # 双击安装
-└─ NEXORA_0.2.1_portable.zip     # 解压后直接运行 nexora.exe
+├─ NEXORA_0.2.2_x64-setup.exe    # 双击安装
+└─ NEXORA_0.2.2_portable.zip     # 解压后直接运行 nexora.exe
 ```
 
 发给别人时需要提醒两点：
@@ -302,7 +303,7 @@ release/
 
 ## 版本历史
 
-见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **0.2.1**。
+见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **0.2.2**。
 
 ## 已知限制
 
