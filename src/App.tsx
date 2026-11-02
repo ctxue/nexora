@@ -9,14 +9,16 @@ import {
 } from "react";
 
 import { AnimatedHeight } from "./components/AnimatedHeight";
+import { ActionPanel } from "./components/ActionPanel";
 import { ClipboardList } from "./components/ClipboardList";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { Footer } from "./components/Footer";
 import { QuickActions } from "./components/QuickActions";
+import { PreviewPanel } from "./components/PreviewPanel";
 import { RecentList } from "./components/RecentList";
 import { ResultList } from "./components/ResultList";
 import { SearchBar } from "./components/SearchBar";
-import type { AppEntry } from "./core/types";
+import type { AppEntry, LauncherItem } from "./core/types";
 import { useManualApps } from "./features/apps/useManualApps";
 import { useCommands } from "./features/commands/useCommands";
 import { useClipboard } from "./features/clipboard/useClipboard";
@@ -24,6 +26,9 @@ import { filterClipboardEntries } from "./features/clipboard/filter";
 import { clipboardUiReducer, INITIAL_CLIPBOARD_UI } from "./features/clipboard/ui";
 import { useIndexFolders } from "./features/indexes/useIndexFolders";
 import { useLauncher } from "./features/launcher/useLauncher";
+import { buildResultActions } from "./features/actions/registry";
+import type { ResultActionDescriptor } from "./features/actions/types";
+import { useResultActions } from "./features/actions/useResultActions";
 import { usePlugins } from "./features/plugins/usePlugins";
 import { useSettings } from "./features/settings/useSettings";
 import {
@@ -58,6 +63,9 @@ function Launcher({ settings }: { settings: Settings }) {
     INITIAL_CLIPBOARD_UI,
   );
   const [clearingClipboard, setClearingClipboard] = useState(false);
+  const [actionTarget, setActionTarget] = useState<LauncherItem | null>(null);
+  const [actionIndex, setActionIndex] = useState(0);
+  const [previewPath, setPreviewPath] = useState<string | null>(null);
   const clipboardOpen = clipboardUi.open;
   const clipboardSelected = clipboardUi.selectedIndex;
 
@@ -105,6 +113,7 @@ function Launcher({ settings }: { settings: Settings }) {
     activateScope,
     setQuery,
     groups,
+    selectedItem,
     selectedIndex,
     setSelectedIndex,
     moveSelection,
@@ -133,6 +142,74 @@ function Launcher({ settings }: { settings: Settings }) {
     onOpenClipboard: openClipboard,
     searchSuspended: clipboardOpen,
   });
+
+  const resultActions = useResultActions(actionTarget);
+
+  const openActionPanel = useCallback((item: LauncherItem | null) => {
+    if (!item || buildResultActions(item).length === 0) return;
+    setActionTarget(item);
+    setActionIndex(0);
+  }, []);
+
+  const closeActionPanel = useCallback(() => {
+    setActionTarget(null);
+    window.requestAnimationFrame(focusSearchInput);
+  }, [focusSearchInput]);
+
+  const executeResultAction = useCallback(
+    async (action: ResultActionDescriptor) => {
+      const item = actionTarget;
+      if (!item) return;
+      setActionTarget(null);
+
+      try {
+        switch (action.id) {
+          case "copy-path":
+            if (!item.path) return;
+            await platform.copyClipboard(item.path);
+            showToast(t("toast.resultCopied"));
+            window.requestAnimationFrame(focusSearchInput);
+            return;
+          case "reveal-path":
+            if (!item.path) return;
+            await platform.revealPath(item.path);
+            hide();
+            return;
+          case "open-with":
+            if (!item.path) return;
+            await platform.openWith(item.path);
+            hide();
+            return;
+          case "run-as-admin":
+            if (!item.path) return;
+            await platform.runAsAdmin(item.path);
+            hide();
+            return;
+          case "preview-file":
+            if (item.path) setPreviewPath(item.path);
+            return;
+          case "activate-window":
+          case "minimize-window":
+          case "close-window":
+            if (!item.windowId) return;
+            await platform.controlWindow(
+              item.windowId,
+              action.id === "activate-window"
+                ? "activate"
+                : action.id === "minimize-window"
+                  ? "minimize"
+                  : "close",
+            );
+            hide();
+            return;
+        }
+      } catch {
+        showToast(t("toast.actionFailed"));
+        window.requestAnimationFrame(focusSearchInput);
+      }
+    },
+    [actionTarget, focusSearchInput, hide, showToast, t],
+  );
 
   const visibleClipboardEntries = useMemo(
     () =>
@@ -253,9 +330,54 @@ function Launcher({ settings }: { settings: Settings }) {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.isComposing || event.keyCode === 229) return;
 
+      if (previewPath) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setPreviewPath(null);
+          window.requestAnimationFrame(focusSearchInput);
+        } else {
+          event.preventDefault();
+        }
+        return;
+      }
+
+      if (actionTarget) {
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          setActionIndex((current) =>
+            Math.min(current + 1, Math.max(0, resultActions.length - 1)),
+          );
+        } else if (event.key === "ArrowUp") {
+          event.preventDefault();
+          setActionIndex((current) => Math.max(0, current - 1));
+        } else if (event.key === "Enter") {
+          event.preventDefault();
+          const action = resultActions[actionIndex];
+          if (action) void executeResultAction(action);
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          closeActionPanel();
+        }
+        return;
+      }
+
       if ((event.ctrlKey || event.metaKey) && event.key === ",") {
         event.preventDefault();
         openSettings();
+        return;
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+        event.preventDefault();
+        openActionPanel(selectedItem);
+        return;
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.code === "Space") {
+        event.preventDefault();
+        if (selectedItem?.kind === "file" && selectedItem.path) {
+          setPreviewPath(selectedItem.path);
+        }
         return;
       }
 
@@ -335,6 +457,8 @@ function Launcher({ settings }: { settings: Settings }) {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
+    actionIndex,
+    actionTarget,
     clearQuery,
     clipboardOpen,
     clipboardSelected,
@@ -342,11 +466,18 @@ function Launcher({ settings }: { settings: Settings }) {
     closeClipboard,
     confirmSelection,
     copyClipboardEntry,
+    closeActionPanel,
+    executeResultAction,
+    focusSearchInput,
     hide,
     moveSelection,
     moveClipboardSelection,
+    openActionPanel,
     openSettings,
+    previewPath,
     query,
+    resultActions,
+    selectedItem,
     scope,
     setQuery,
     visibleClipboardEntries,
@@ -390,6 +521,7 @@ function Launcher({ settings }: { settings: Settings }) {
             shortcut={settings.shortcut}
             inputRef={inputRef}
             onChange={(value) => {
+              setActionTarget(null);
               if (clipboardOpen) {
                 setQuery(value);
               } else if (scope) {
@@ -447,6 +579,7 @@ function Launcher({ settings }: { settings: Settings }) {
                     selectedIndex={selectedIndex}
                     onSelect={setSelectedIndex}
                     onExecute={execute}
+                    onActions={openActionPanel}
                   />
                 ) : settings.showRecent && recents.length > 0 ? (
                   <RecentList
@@ -472,6 +605,10 @@ function Launcher({ settings }: { settings: Settings }) {
                 indexing={indexing}
                 fileCount={fileCount}
                 onSettings={openSettings}
+                showActions={Boolean(
+                  selectedItem &&
+                    (selectedItem.path || selectedItem.windowId),
+                )}
               />
             </>
           ) : null}
@@ -489,6 +626,28 @@ function Launcher({ settings }: { settings: Settings }) {
                 window.requestAnimationFrame(focusSearchInput);
               }}
               onConfirm={() => void clearClipboardHistory()}
+            />
+          ) : null}
+
+          {actionTarget ? (
+            <ActionPanel
+              item={actionTarget}
+              actions={resultActions}
+              selectedIndex={actionIndex}
+              icons={icons}
+              onSelect={setActionIndex}
+              onRun={(action) => void executeResultAction(action)}
+              onClose={closeActionPanel}
+            />
+          ) : null}
+
+          {previewPath ? (
+            <PreviewPanel
+              path={previewPath}
+              onClose={() => {
+                setPreviewPath(null);
+                window.requestAnimationFrame(focusSearchInput);
+              }}
             />
           ) : null}
         </section>

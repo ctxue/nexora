@@ -519,7 +519,7 @@ pub fn start_monitor(app: AppHandle, history: ClipboardHistory) {
     });
 }
 
-fn read_clipboard_text() -> Result<Option<String>, ()> {
+pub(crate) fn read_clipboard_text() -> Result<Option<String>, ()> {
     unsafe {
         OpenClipboard(None).map_err(|_| ())?;
 

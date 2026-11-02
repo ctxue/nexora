@@ -11,6 +11,7 @@ import type { UnlistenFn } from "@tauri-apps/api/event";
 import {
   acceptsArgument,
   buildArguments,
+  buildTarget,
   buildUrl,
   COMMAND_ICON_CHOICES,
   commandHost,
@@ -18,8 +19,12 @@ import {
   parseQuery,
   scoreCustomCommand,
   type CustomCommand,
+  type TemplateContext,
 } from "../../core/commands";
+import { evaluateSmartQuery } from "../../core/calculator";
+import { hasSearchFilters, parseSearchQuery } from "../../core/query";
 import { buildGroups, commandToItem } from "../../core/search";
+import { searchWindows } from "../../core/windows";
 import type {
   AppEntry,
   CommandIcon,
@@ -29,6 +34,7 @@ import type {
   QuickPaths,
   RecentItem,
   ResultGroup,
+  WindowEntry,
 } from "../../core/types";
 import {
   platform,
@@ -112,6 +118,7 @@ export function useLauncher({
   const [apps, setApps] = useState<AppEntry[]>([]);
   const [paths, setPaths] = useState<QuickPaths | null>(null);
   const [drives, setDrives] = useState<DriveInfo[]>([]);
+  const [windows, setWindows] = useState<WindowEntry[]>([]);
   const [query, setQueryState] = useState("");
   const [fileResults, setFileResults] = useState<FileEntry[]>([]);
   const [fileCount, setFileCount] = useState<number | null>(null);
@@ -161,7 +168,16 @@ export function useLauncher({
     () => parseQuery(query, customCommands),
     [customCommands, query],
   );
-  const searchQuery = useDeferredValue(query);
+  const deferredQuery = useDeferredValue(query);
+  const deferredParsed = useMemo(
+    () => parseQuery(deferredQuery, customCommands),
+    [customCommands, deferredQuery],
+  );
+  const searchQuery = deferredParsed.argument;
+  const searchFilters = useMemo(
+    () => parseSearchQuery(searchQuery),
+    [searchQuery],
+  );
   const scope = parsed.scope;
   const argument = scope ? parsed.argument : "";
 
@@ -170,32 +186,47 @@ export function useLauncher({
     [apps, indexedApps, manualApps],
   );
 
+  const templateContext = useCallback(async (): Promise<TemplateContext> => {
+    const [clipboard, selected] = await Promise.all([
+      platform.readClipboardText().catch(() => ""),
+      platform.getSelectedText().catch(() => ""),
+    ]);
+    return {
+      clipboard,
+      selected,
+      date: new Date().toLocaleDateString("sv-SE"),
+    };
+  }, []);
+
   const runCustomCommand = useCallback(
-    (command: CustomCommand, value: string) => {
+    async (command: CustomCommand, value: string) => {
       const action = command.action;
+      const context = await templateContext();
       switch (action.kind) {
         case "web-search":
           return platform.openUrl(
-            buildUrl(action.template, value),
+            buildUrl(action.template, value, context),
             action.browser,
             action.newWindow,
           );
         case "open-url":
           return platform.openUrl(
-            action.target,
+            buildUrl(action.target, value, context),
             action.browser,
             action.newWindow,
           );
         case "open-path":
-          return platform.openPath(action.target);
+          return platform.openPath(
+            buildTarget(action.target, value, context),
+          );
         case "launch":
           return platform.launchProgram(
-            action.target,
-            buildArguments(action.args, value),
+            buildTarget(action.target, value, context),
+            buildArguments(action.args, value, context),
           );
       }
     },
-    [],
+    [templateContext],
   );
 
   const enterScope = useCallback((command: CustomCommand) => {
@@ -272,7 +303,7 @@ export function useLauncher({
     pluginRequest.current += 1;
     const requestId = pluginRequest.current;
 
-    if (scope || searchSuspended) {
+    if (scope || searchSuspended || hasSearchFilters(searchFilters)) {
       setPluginResults(null);
       return;
     }
@@ -314,7 +345,7 @@ export function useLauncher({
     }, 120);
 
     return () => window.clearTimeout(timer);
-  }, [enabledPlugins, scope, searchQuery, searchSuspended]);
+  }, [enabledPlugins, scope, searchFilters, searchQuery, searchSuspended]);
 
   const runPluginAction = useCallback(
     async (action: PluginItem["action"]) => {
@@ -513,6 +544,35 @@ export function useLauncher({
     [commands],
   );
 
+  const recentToItem = useCallback(
+    (recent: RecentItem): LauncherItem | null => {
+      if (recent.kind === "command" && recent.id.startsWith("custom:")) {
+        const command = customCommands.find(
+          (entry) => `custom:${entry.id}` === recent.id,
+        );
+        return command ? commandItem(command) : null;
+      }
+
+      if (recent.kind === "command") {
+        const command = commands.find((entry) => entry.id === recent.id);
+        return command ? commandToItem(command) : null;
+      }
+
+      if (!recent.path) return null;
+      return {
+        id: recent.id,
+        kind: recent.kind,
+        title: recent.title,
+        subtitle:
+          recent.kind === "app" ? t("common.application") : recent.subtitle,
+        path: recent.path,
+        extension: recent.extension,
+        run: () => platform.openPath(recent.path!),
+      };
+    },
+    [commandItem, commands, customCommands, t],
+  );
+
   const groups = useMemo<ResultGroup[]>(() => {
     if (scope) {
       return [
@@ -525,6 +585,28 @@ export function useLauncher({
       ];
     }
 
+    if (searchFilters.recentOnly) {
+      const recentQuery = searchFilters.text.toLocaleLowerCase();
+      const recentItems = recents
+        .filter(
+          (recent) =>
+            !recentQuery ||
+            recent.title.toLocaleLowerCase().includes(recentQuery),
+        )
+        .map(recentToItem)
+        .filter((item): item is LauncherItem => Boolean(item));
+      return recentItems.length > 0
+        ? [
+            {
+              id: "recent",
+              label: t("recent.label"),
+              color: "var(--group-label)",
+              items: recentItems,
+            },
+          ]
+        : [];
+    }
+
     const base = buildGroups(
       allApps,
       fileResults,
@@ -532,22 +614,31 @@ export function useLauncher({
       searchQuery,
       runPath,
       {
-      app: t("groups.applications"),
-      command: t("groups.commands"),
-      file: t("groups.files"),
-      applicationSubtitle: t("common.application"),
+        app: t("groups.applications"),
+        command: t("groups.commands"),
+        file: t("groups.files"),
+        applicationSubtitle: t("common.application"),
       },
+      searchFilters,
     );
 
-    const customItems = customCommands
-      .map((command) => ({
-        command,
-        score: command.enabled ? scoreCustomCommand(command, searchQuery) : 0,
-      }))
-      .filter((entry) => entry.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 3)
-      .map((entry) => commandItem(entry.command));
+    const canShowCommands =
+      !searchFilters.appOnly &&
+      !searchFilters.fileOnly &&
+      !searchFilters.recentOnly;
+    const customItems = canShowCommands
+      ? customCommands
+          .map((command) => ({
+            command,
+            score: command.enabled
+              ? scoreCustomCommand(command, searchFilters.text)
+              : 0,
+          }))
+          .filter((entry) => entry.score > 0)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 3)
+          .map((entry) => commandItem(entry.command))
+      : [];
 
     // Commands are actions, so they come before apps and files. Custom
     // commands sit ahead of the built-in ones.
@@ -578,7 +669,7 @@ export function useLauncher({
     const fileGroup = base.find((group) => group.id === "file");
 
     const pluginGroup: ResultGroup | null =
-      pluginResults && pluginResults.items.length > 0
+      canShowCommands && pluginResults && pluginResults.items.length > 0
         ? {
             id: "plugin",
             label: pluginResults.plugin.name,
@@ -589,7 +680,67 @@ export function useLauncher({
           }
         : null;
 
-    return [driveGroup, pluginGroup, commandGroup, appGroup, fileGroup].filter(
+    const smartResult = hasSearchFilters(searchFilters)
+      ? null
+      : evaluateSmartQuery(searchFilters.text);
+    const smartGroup: ResultGroup | null = smartResult
+      ? {
+          id: "smart",
+          label: t("groups.calculator"),
+          color: "var(--group-label)",
+          items: [
+            {
+              id: `smart:${smartResult.value}`,
+              kind: "utility",
+              title: smartResult.title,
+              subtitle: smartResult.subtitle,
+              commandIcon: "calculator",
+              keepOpen: true,
+              run: async () => {
+                await platform.copyClipboard(smartResult.copyText);
+                showToast(t("toast.resultCopied"));
+              },
+            },
+          ],
+        }
+      : null;
+
+    const windowGroup: ResultGroup | null =
+      canShowCommands && searchFilters.text.trim()
+        ? (() => {
+            const matches = searchWindows(windows, searchFilters.text);
+            if (matches.length === 0) return null;
+            return {
+              id: "window",
+              label: t("groups.windows"),
+              color: "var(--group-label)",
+              items: matches.map((window) => ({
+                id: `window:${window.id}`,
+                kind: "window" as const,
+                title: window.title,
+                subtitle: [
+                  window.processName,
+                  window.minimized ? t("windows.minimized") : "",
+                ]
+                  .filter(Boolean)
+                  .join(" · "),
+                windowId: window.id,
+                commandIcon: "window" as const,
+                run: () => platform.controlWindow(window.id, "activate"),
+              })),
+            };
+          })()
+        : null;
+
+    return [
+      smartGroup,
+      driveGroup,
+      pluginGroup,
+      commandGroup,
+      appGroup,
+      windowGroup,
+      fileGroup,
+    ].filter(
       (group): group is ResultGroup => Boolean(group && group.items.length > 0),
     );
   }, [
@@ -601,11 +752,16 @@ export function useLauncher({
     fileResults,
     pluginResults,
     pluginToItem,
+    recents,
+    recentToItem,
     searchQuery,
+    searchFilters,
     runPath,
     scope,
     scopedItem,
+    showToast,
     t,
+    windows,
   ]);
 
   const items = useMemo(() => groups.flatMap((group) => group.items), [groups]);
@@ -613,51 +769,21 @@ export function useLauncher({
   const startItems = useMemo<LauncherItem[]>(() => {
     if (!settings.showRecent || recents.length === 0) return quickActions;
 
-    return recents.flatMap((recent) => {
-      if (recent.kind === "command" && recent.id.startsWith("custom:")) {
-        const command = customCommands.find(
-          (entry) => `custom:${entry.id}` === recent.id,
-        );
-        return command ? [commandItem(command)] : [];
-      }
-
-      if (recent.kind === "command") {
-        const command = commands.find((entry) => entry.id === recent.id);
-        return command ? [commandToItem(command)] : [];
-      }
-
-      const path = recent.path;
-      if (!path) return [];
-
-      return [
-        {
-          id: recent.id,
-          kind: recent.kind,
-          title: recent.title,
-          subtitle:
-            recent.kind === "app"
-              ? t("common.application")
-              : recent.subtitle,
-          path,
-          extension: recent.extension,
-          run: () => platform.openPath(path),
-        },
-      ];
-    });
+    return recents
+      .map(recentToItem)
+      .filter((item): item is LauncherItem => Boolean(item));
   }, [
-    commandItem,
-    commands,
-    customCommands,
     quickActions,
     recents,
+    recentToItem,
     settings.showRecent,
-    t,
   ]);
 
   const navigateItems = useMemo(
     () => (query.trim() ? items : startItems),
     [items, query, startItems],
   );
+  const selectedItem = navigateItems[selectedIndex] ?? null;
 
   useEffect(() => {
     let mounted = true;
@@ -759,18 +885,43 @@ export function useLauncher({
   }, [showNonce]);
 
   useEffect(() => {
-    const trimmed = searchQuery.trim();
+    let mounted = true;
+    void platform
+      .listWindows()
+      .then((next) => {
+        if (mounted) setWindows(next);
+      })
+      .catch(() => {
+        // Window search is optional and must not block normal launcher use.
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [showNonce]);
+
+  useEffect(() => {
+    const trimmed = searchFilters.text.trim();
     const requestId = ++searchRequest.current;
 
     // Inside a command scope the text is the command argument, not a file query.
-    if (!settings.fileSearch || !trimmed || scope || searchSuspended) {
+    if (
+      !settings.fileSearch ||
+      !trimmed ||
+      scope ||
+      searchSuspended ||
+      searchFilters.appOnly ||
+      searchFilters.recentOnly
+    ) {
       setFileResults([]);
       return;
     }
 
     const timer = window.setTimeout(() => {
       void platform
-        .searchFiles(trimmed, 8)
+        .searchFiles(
+          trimmed,
+          searchFilters.type || searchFilters.folder ? 30 : 8,
+        )
         .then((files) => {
           if (searchRequest.current === requestId) {
             setFileResults(files);
@@ -784,7 +935,7 @@ export function useLauncher({
     }, 35);
 
     return () => window.clearTimeout(timer);
-  }, [scope, searchQuery, searchSuspended, settings.fileSearch]);
+  }, [scope, searchFilters, searchSuspended, settings.fileSearch]);
 
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
@@ -867,6 +1018,9 @@ export function useLauncher({
 
   const rememberRecent = useCallback((item: LauncherItem) => {
     if (item.kind === "command" && item.id === "quit") return;
+    if (item.kind !== "app" && item.kind !== "file" && item.kind !== "command") {
+      return;
+    }
     // Plugin results are ephemeral (they depend on the query), so they never
     // enter the recent list.
     if (item.id.startsWith("plugin:")) return;
@@ -946,6 +1100,7 @@ export function useLauncher({
     setQuery,
     groups,
     items,
+    selectedItem,
     selectedIndex,
     setSelectedIndex,
     moveSelection,

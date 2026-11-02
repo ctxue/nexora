@@ -30,6 +30,12 @@ export interface CustomCommand {
   updatedAt: number;
 }
 
+export interface TemplateContext {
+  clipboard: string;
+  selected: string;
+  date: string;
+}
+
 export const COMMAND_LIMIT = 100;
 
 /** 1–16 characters, starts with a letter or digit. */
@@ -73,8 +79,10 @@ function isHttpUrl(value: string): boolean {
 /** Whether the command expects text after its keyword (`edge <query>`). */
 export function acceptsArgument(command: CustomCommand): boolean {
   if (command.action.kind === "web-search") return true;
-  if (command.action.kind === "launch") return command.action.args.includes("{query}");
-  return false;
+  return (
+    command.action.target.includes("{query}") ||
+    command.action.args.includes("{query}")
+  );
 }
 
 /** Finds an enabled argument-taking command by its exact keyword. */
@@ -94,9 +102,42 @@ export function findArgumentCommand(
   );
 }
 
-/** Replaces `{query}` in a URL template, percent-encoding the argument. */
-export function buildUrl(template: string, argument: string): string {
-  return template.replaceAll("{query}", encodeURIComponent(argument));
+type TemplateValues = TemplateContext & { query: string };
+
+function templateValues(
+  argument: string,
+  context?: Partial<TemplateContext>,
+): TemplateValues {
+  return {
+    query: argument,
+    clipboard: context?.clipboard ?? "",
+    selected: context?.selected ?? "",
+    date: context?.date ?? new Date().toLocaleDateString("sv-SE"),
+  };
+}
+
+function fillTemplate(
+  template: string,
+  values: TemplateValues,
+  encode: (value: string) => string,
+): string {
+  return template.replace(
+    /\{(query|clipboard|selected|date)\}/gu,
+    (_match, key: keyof TemplateValues) => encode(values[key]),
+  );
+}
+
+/** Replaces supported placeholders in a URL template. */
+export function buildUrl(
+  template: string,
+  argument: string,
+  context?: Partial<TemplateContext>,
+): string {
+  return fillTemplate(
+    template,
+    templateValues(argument, context),
+    encodeURIComponent,
+  );
 }
 
 /** Quotes one argument for the Windows command line. */
@@ -107,9 +148,24 @@ export function quoteWindowsArgument(value: string): string {
   return `"${escaped}"`;
 }
 
-/** Fills a raw argument template with the (quoted) launcher argument. */
-export function buildArguments(template: string, argument: string): string {
-  return template.replaceAll("{query}", quoteWindowsArgument(argument));
+/** Fills a raw argument template, quoting each substituted value. */
+export function buildArguments(
+  template: string,
+  argument: string,
+  context?: Partial<TemplateContext>,
+): string {
+  return fillTemplate(template, templateValues(argument, context), (value) =>
+    quoteWindowsArgument(value),
+  );
+}
+
+/** Fills a file, folder, or URL target without command-line quoting. */
+export function buildTarget(
+  template: string,
+  argument: string,
+  context?: Partial<TemplateContext>,
+): string {
+  return fillTemplate(template, templateValues(argument, context), (value) => value);
 }
 
 function normalizeAction(value: unknown): CommandAction {

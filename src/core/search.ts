@@ -6,6 +6,7 @@ import type {
   LauncherItem,
   ResultGroup,
 } from "./types";
+import { matchesFileFilters, type SearchQuery } from "./query";
 
 const GROUP_META = {
   app: { label: "Applications", color: "var(--group-label)" },
@@ -212,8 +213,10 @@ export function buildGroups(
     file: string;
     applicationSubtitle: string;
   },
+  filters?: SearchQuery,
 ): ResultGroup[] {
-  const appItems: LauncherItem[] = searchApps(apps, query).map((app) => ({
+  const searchText = filters?.text ?? query;
+  const appItems: LauncherItem[] = searchApps(apps, searchText).map((app) => ({
     id: app.id,
     kind: "app",
     title: app.name,
@@ -222,19 +225,25 @@ export function buildGroups(
     run: () => runPath(app.path),
   }));
 
-  const fileItems: LauncherItem[] = files.slice(0, 5).map((file) => ({
-    id: file.id,
-    kind: "file",
-    title: file.name,
-    subtitle: file.parent,
-    path: file.path,
-    extension: file.extension,
-    run: () => runPath(file.path),
-  }));
+  const fileItems: LauncherItem[] = files
+    .filter(
+      (file) => !filters || matchesFileFilters(file, filters),
+    )
+    .slice(0, 5)
+    .map((file) => ({
+      id: file.id,
+      kind: "file",
+      title: file.name,
+      subtitle: file.parent,
+      path: file.path,
+      extension: file.extension,
+      run: () => runPath(file.path),
+    }));
 
-  const commandItems: LauncherItem[] = searchCommands(commands, query).map(
-    commandToItem,
-  );
+  const commandItems: LauncherItem[] = searchCommands(
+    commands,
+    searchText,
+  ).map(commandToItem);
 
   const groups: ResultGroup[] = [
     {
@@ -257,5 +266,10 @@ export function buildGroups(
     },
   ];
 
-  return groups.filter((group) => group.items.length > 0);
+  return groups.filter((group) => {
+    if (group.items.length === 0) return false;
+    if (filters?.appOnly) return group.id === "app";
+    if (filters?.fileOnly) return group.id === "file";
+    return true;
+  });
 }

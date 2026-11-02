@@ -25,9 +25,11 @@ mod icons;
 mod launcher;
 mod models;
 mod platform;
+mod preview;
 mod scanning;
 mod shell_icon;
 mod state;
 mod tray;
+mod windows;
 
 pub use app::run;

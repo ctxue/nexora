@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  acceptsArgument,
   buildArguments,
+  buildTarget,
   buildUrl,
   createCommand,
   parseQuery,
@@ -59,6 +61,20 @@ describe("parseQuery", () => {
 });
 
 describe("command arguments", () => {
+  it("enters command scope when any action target needs the query", () => {
+    expect(
+      acceptsArgument(
+        command({
+          action: {
+            ...command().action,
+            kind: "open-url",
+            target: "https://example.com/search?q={query}",
+          },
+        }),
+      ),
+    ).toBe(true);
+  });
+
   it("percent-encodes text substituted into a URL template", () => {
     expect(
       buildUrl("https://example.com?q={query}", "rust & tauri"),
@@ -76,5 +92,51 @@ describe("command arguments", () => {
     expect(quoteWindowsArgument('a "quoted" path\\')).toBe(
       '"a \\"quoted\\" path\\\\"',
     );
+  });
+
+  it("fills URL templates with every supported placeholder", () => {
+    expect(
+      buildUrl(
+        "https://example.com?q={query}&clip={clipboard}&sel={selected}&on={date}",
+        "rust & tauri",
+        {
+          clipboard: "copied / text",
+          selected: "selected text",
+          date: "2026-11-02",
+        },
+      ),
+    ).toBe(
+      "https://example.com?q=rust%20%26%20tauri&clip=copied%20%2F%20text&sel=selected%20text&on=2026-11-02",
+    );
+  });
+
+  it("quotes clipboard and selection values in program arguments", () => {
+    expect(
+      buildArguments("--note {clipboard} --selected {selected}", "", {
+        clipboard: "hello world",
+        selected: "selected text",
+        date: "2026-11-02",
+      }),
+    ).toBe('--note "hello world" --selected "selected text"');
+  });
+
+  it("replaces unresolved values with an empty string", () => {
+    expect(
+      buildArguments("--note {clipboard}", "", {
+        clipboard: "",
+        selected: "",
+        date: "2026-11-02",
+      }),
+    ).toBe('--note ""');
+  });
+
+  it("fills path targets without adding shell quotes", () => {
+    expect(
+      buildTarget("C:\\Notes\\{date}\\{query}.txt", "weekly plan", {
+        clipboard: "",
+        selected: "",
+        date: "2026-11-02",
+      }),
+    ).toBe("C:\\Notes\\2026-11-02\\weekly plan.txt");
   });
 });

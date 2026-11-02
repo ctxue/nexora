@@ -23,6 +23,16 @@ pub struct FileEntry {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct WindowEntry {
+    pub id: String,
+    pub title: String,
+    pub process_name: String,
+    pub process_path: Option<String>,
+    pub minimized: bool,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct QuickPaths {
     pub home: String,
     pub desktop: String,

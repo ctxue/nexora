@@ -859,6 +859,234 @@
   line-height: 1.5;
 }
 
+.action-panel-layer,
+.preview-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 10px;
+  background: rgba(var(--shadow-rgb), 0.08);
+}
+
+.action-panel,
+.preview-panel {
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  box-shadow:
+    0 16px 36px -18px rgba(var(--shadow-rgb), 0.42),
+    0 4px 12px -6px rgba(var(--shadow-rgb), 0.18);
+  animation: panel-in 150ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.action-panel {
+  width: min(330px, calc(100% - 20px));
+  margin-bottom: 33px;
+}
+
+.preview-panel {
+  width: calc(100% - 20px);
+  height: min(470px, calc(100% - 20px));
+  display: flex;
+  flex-direction: column;
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.action-panel-header,
+.preview-header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 11px;
+  border-bottom: 1px solid var(--line);
+}
+
+.action-panel-icon {
+  width: 25px;
+  height: 25px;
+  flex: 0 0 25px;
+}
+
+.action-panel-icon .real-icon,
+.action-panel-icon .glyph {
+  width: 25px;
+  height: 25px;
+}
+
+.action-panel-copy,
+.preview-heading {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.action-panel-title,
+.preview-title {
+  overflow: hidden;
+  color: var(--text-soft);
+  font-size: calc(11px * var(--font-scale));
+  font-weight: 590;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.action-panel-subtitle,
+.preview-metadata {
+  overflow: hidden;
+  color: var(--text-subtle);
+  font-size: calc(9px * var(--font-scale));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.action-panel-esc {
+  padding: 2px 4px;
+  color: var(--text-subtle);
+  background: var(--key-bg);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: calc(8px * var(--font-scale));
+}
+
+.action-panel-items {
+  padding: 5px;
+}
+
+.action-panel-item {
+  width: 100%;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  color: var(--text-soft);
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  font-size: calc(11px * var(--font-scale));
+  text-align: left;
+}
+
+.action-panel-item > span {
+  min-width: 0;
+  flex: 1;
+}
+
+.action-panel-item.is-selected {
+  color: var(--text);
+  background: var(--surface-selected);
+}
+
+.action-panel-item.is-danger {
+  color: var(--danger-text);
+}
+
+.action-panel-item.is-danger.is-selected {
+  background: var(--danger-bg);
+}
+
+.action-panel-chevron {
+  color: var(--text-ghost);
+}
+
+.action-panel-shortcut {
+  color: var(--text-subtle);
+  font-family: inherit;
+  font-size: calc(8.5px * var(--font-scale));
+}
+
+.preview-kind {
+  width: 27px;
+  height: 27px;
+  flex: 0 0 27px;
+  display: grid;
+  place-items: center;
+  color: var(--text-medium);
+  background: var(--surface-selected);
+  border-radius: 7px;
+}
+
+.preview-close {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--text-subtle);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+}
+
+.preview-close:hover {
+  color: var(--text-medium);
+  background: var(--surface-selected);
+}
+
+.preview-body {
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  place-items: stretch;
+  overflow: auto;
+  background: var(--surface-subtle);
+}
+
+.preview-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 12px;
+}
+
+.preview-text {
+  margin: 0;
+  padding: 14px 16px;
+  overflow: auto;
+  color: var(--text-soft);
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: calc(10.5px * var(--font-scale));
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.preview-empty {
+  min-height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 20px;
+  color: var(--text-subtle);
+  font-size: calc(10.5px * var(--font-scale));
+  text-align: center;
+}
+
+.preview-footer {
+  padding: 7px 12px;
+  color: var(--text-subtle);
+  border-top: 1px solid var(--line);
+  font-size: calc(9px * var(--font-scale));
+}
+
 .launcher-footer {
   height: 35px;
   flex: 0 0 35px;

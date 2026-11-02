@@ -12,6 +12,7 @@ interface FooterProps {
   indexing: boolean;
   fileCount: number | null;
   onSettings: () => void;
+  showActions: boolean;
 }
 
 function formatCount(count: number): string {
@@ -21,7 +22,12 @@ function formatCount(count: number): string {
   return String(count);
 }
 
-export function Footer({ indexing, fileCount, onSettings }: FooterProps) {
+export function Footer({
+  indexing,
+  fileCount,
+  onSettings,
+  showActions,
+}: FooterProps) {
   const { t } = useI18n();
 
   return (
@@ -43,6 +49,16 @@ export function Footer({ indexing, fileCount, onSettings }: FooterProps) {
           </kbd>
           <span>{t("footer.open")}</span>
         </span>
+
+        {showActions ? (
+          <span className="footer-hint">
+            <kbd className="key-text">Ctrl</kbd>
+            <kbd className="key-icon">
+              <CornerDownLeft size={10} strokeWidth={2.2} />
+            </kbd>
+            <span>{t("footer.actions")}</span>
+          </span>
+        ) : null}
 
         <span className="footer-hint">
           <kbd className="key-text">esc</kbd>

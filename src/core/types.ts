@@ -13,6 +13,14 @@ export interface FileEntry {
   parent: string;
 }
 
+export interface WindowEntry {
+  id: string;
+  title: string;
+  processName: string;
+  processPath: string | null;
+  minimized: boolean;
+}
+
 export interface QuickPaths {
   home: string;
   desktop: string;
@@ -34,7 +42,9 @@ export type CommandIcon =
   | "search"
   | "link"
   | "folder"
-  | "terminal";
+  | "terminal"
+  | "calculator"
+  | "window";
 
 export interface LauncherCommand {
   id: string;
@@ -45,7 +55,7 @@ export interface LauncherCommand {
   run: () => void | Promise<void>;
 }
 
-export type ResultKind = "app" | "file" | "command";
+export type ResultKind = "app" | "file" | "command" | "utility" | "window";
 
 export interface LauncherItem {
   id: string;
@@ -54,6 +64,7 @@ export interface LauncherItem {
   subtitle: string;
   path?: string;
   extension?: string;
+  windowId?: string;
   commandIcon?: CommandIcon;
   keepOpen?: boolean;
   run: () => void | Promise<void>;
