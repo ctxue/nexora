@@ -27,12 +27,19 @@ function command(patch: Partial<CustomCommand> = {}): CustomCommand {
 }
 
 describe("parseQuery", () => {
-  it("enters a command scope when an argument-taking keyword is followed by text", () => {
+  it("enters a command scope after Tab", () => {
     const github = command();
 
-    expect(parseQuery("gh rust tauri", [github])).toEqual({
+    expect(parseQuery("gh\trust tauri", [github])).toEqual({
       scope: github,
       argument: "rust tauri",
+    });
+  });
+
+  it("keeps spaces as normal search text rather than activating a command", () => {
+    expect(parseQuery("gh rust tauri", [command()])).toEqual({
+      scope: null,
+      argument: "gh rust tauri",
     });
   });
 
@@ -44,9 +51,9 @@ describe("parseQuery", () => {
   });
 
   it("does not scope through a disabled command", () => {
-    expect(parseQuery("gh rust", [command({ enabled: false })])).toEqual({
+    expect(parseQuery("gh\trust", [command({ enabled: false })])).toEqual({
       scope: null,
-      argument: "gh rust",
+      argument: "gh\trust",
     });
   });
 });

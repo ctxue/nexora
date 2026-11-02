@@ -1,11 +1,17 @@
 import { X } from "lucide-react";
-import type { RefObject } from "react";
+import {
+  startTransition,
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 
 import type { CommandIcon } from "../core/types";
 import { useI18n } from "../i18n";
 import { BrandMark } from "./BrandMark";
 import { CommandGlyphIcon } from "./CommandGlyph";
-import { SearchCaret } from "./SearchCaret";
 
 interface SearchBarProps {
   value: string;
@@ -14,6 +20,7 @@ interface SearchBarProps {
   onChange: (value: string) => void;
   onClear: () => void;
   onDragStart: () => void;
+  onActivateScope?: (value: string) => boolean;
   /** Active command scope: the typed keyword became a chip. */
   scope?: { title: string; keyword: string; icon: CommandIcon } | null;
   onClearScope?: () => void;
@@ -26,10 +33,33 @@ export function SearchBar({
   onChange,
   onClear,
   onDragStart,
+  onActivateScope,
   scope = null,
   onClearScope,
 }: SearchBarProps) {
   const { t } = useI18n();
+  const [draft, setDraft] = useState(value);
+  const scopeKey = scope?.keyword ?? null;
+  const previousScopeKey = useRef(scopeKey);
+
+  const resetCaret = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      const input = inputRef.current;
+      if (!input) return;
+      input.focus({ preventScroll: true });
+      input.setSelectionRange(0, 0);
+    });
+  }, [inputRef]);
+
+  useLayoutEffect(() => {
+    const scopeChanged = previousScopeKey.current !== scopeKey;
+    previousScopeKey.current = scopeKey;
+    const inputFocused = document.activeElement === inputRef.current;
+    if (scopeChanged || value === "" || !inputFocused) {
+      setDraft(value);
+      if (scopeChanged) resetCaret();
+    }
+  }, [inputRef, resetCaret, scopeKey, value]);
 
   return (
     <div
@@ -59,21 +89,44 @@ export function SearchBar({
       </span>
 
       {scope ? (
-        <span className="search-scope" title={t("search.clearScope")}>
+        <button
+          type="button"
+          className="search-scope"
+          title={t("search.clearScope")}
+          aria-label={`${t("search.removeScope")}: ${scope.title}`}
+          onClick={() => {
+            setDraft("");
+            onClearScope?.();
+            resetCaret();
+          }}
+        >
           <CommandGlyphIcon icon={scope.icon} size={13} strokeWidth={1.9} />
           <span className="search-scope-label">{scope.title}</span>
-        </span>
+        </button>
       ) : null}
 
       <input
         ref={inputRef}
         className="search-input"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
+        value={draft}
+        onChange={(event) => {
+          const next = event.target.value;
+          setDraft(next);
+          startTransition(() => onChange(next));
+        }}
         onKeyDown={(event) => {
+          if (event.key === "Tab" && !event.shiftKey) {
+            event.preventDefault();
+            if (!scope && onActivateScope?.(draft)) {
+              setDraft("");
+            }
+            return;
+          }
           if (scope && event.key === "Backspace" && value === "") {
             event.preventDefault();
+            setDraft("");
             onClearScope?.();
+            resetCaret();
           }
         }}
         placeholder={
@@ -92,13 +145,15 @@ export function SearchBar({
         autoFocus
       />
 
-      <SearchCaret inputRef={inputRef} />
-
-      {value ? (
+      {draft ? (
         <button
           type="button"
           className="clear-button"
-          onClick={onClear}
+          onClick={() => {
+            setDraft("");
+            onClear();
+            resetCaret();
+          }}
           aria-label={t("search.clear")}
         >
           <X size={14} strokeWidth={2} />

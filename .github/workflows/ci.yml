@@ -34,6 +34,9 @@ jobs:
       - name: Run frontend tests
         run: pnpm test
 
+      - name: Test release workflow
+        run: pnpm test:scripts
+
       - name: Build frontend
         run: pnpm build
 

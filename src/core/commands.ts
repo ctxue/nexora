@@ -77,6 +77,23 @@ export function acceptsArgument(command: CustomCommand): boolean {
   return false;
 }
 
+/** Finds an enabled argument-taking command by its exact keyword. */
+export function findArgumentCommand(
+  keyword: string,
+  commands: CustomCommand[],
+): CustomCommand | null {
+  const normalized = keyword.trim().toLowerCase();
+  if (!normalized) return null;
+  return (
+    commands.find(
+      (entry) =>
+        entry.enabled &&
+        acceptsArgument(entry) &&
+        entry.keyword.toLowerCase() === normalized,
+    ) ?? null
+  );
+}
+
 /** Replaces `{query}` in a URL template, percent-encoding the argument. */
 export function buildUrl(template: string, argument: string): string {
   return template.replaceAll("{query}", encodeURIComponent(argument));
@@ -231,16 +248,10 @@ export function parseQuery(
   raw: string,
   commands: CustomCommand[],
 ): ParsedQuery {
-  const match = /^(\S+)[ \t]+([\s\S]*)$/.exec(raw);
+  const match = /^(\S+)\t([\s\S]*)$/.exec(raw);
   if (!match) return { scope: null, argument: raw };
 
-  const keyword = match[1].toLowerCase();
-  const command = commands.find(
-    (entry) =>
-      entry.enabled &&
-      acceptsArgument(entry) &&
-      entry.keyword.toLowerCase() === keyword,
-  );
+  const command = findArgumentCommand(match[1], commands);
 
   return command
     ? { scope: command, argument: match[2] }

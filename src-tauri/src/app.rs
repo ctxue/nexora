@@ -76,7 +76,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let plugin_root = app.path().app_data_dir()?.join("plugins");
     std::fs::create_dir_all(&plugin_root)?;
     app.manage(commands::plugins::PluginHost::new(plugin_root));
-    let clipboard_path = app.path().app_data_dir()?.join("clipboard-history.json");
+    let clipboard_path = app.path().app_data_dir()?.join("clipboard-history.bin");
     let clipboard = ClipboardHistory::new(clipboard_path);
     app.manage(clipboard.clone());
     start_monitor(app.handle().clone(), clipboard);

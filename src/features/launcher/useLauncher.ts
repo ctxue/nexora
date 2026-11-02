@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 
 import {
@@ -7,6 +14,7 @@ import {
   buildUrl,
   COMMAND_ICON_CHOICES,
   commandHost,
+  findArgumentCommand,
   parseQuery,
   scoreCustomCommand,
   type CustomCommand,
@@ -153,6 +161,7 @@ export function useLauncher({
     () => parseQuery(query, customCommands),
     [customCommands, query],
   );
+  const searchQuery = useDeferredValue(query);
   const scope = parsed.scope;
   const argument = scope ? parsed.argument : "";
 
@@ -190,9 +199,17 @@ export function useLauncher({
   );
 
   const enterScope = useCallback((command: CustomCommand) => {
-    setQueryState(`${command.keyword} `);
+    setQueryState(`${command.keyword}\t`);
     setSelectedIndex(0);
   }, []);
+
+  const activateScope = useCallback((value = query) => {
+    if (scope) return false;
+    const command = findArgumentCommand(value, customCommands);
+    if (!command) return false;
+    enterScope(command);
+    return true;
+  }, [customCommands, enterScope, query, scope]);
 
   const commandItem = useCallback(
     (command: CustomCommand): LauncherItem => {
@@ -260,7 +277,7 @@ export function useLauncher({
       return;
     }
 
-    const trimmed = query.trim();
+    const trimmed = searchQuery.trim();
     if (!trimmed) {
       setPluginResults(null);
       return;
@@ -297,7 +314,7 @@ export function useLauncher({
     }, 120);
 
     return () => window.clearTimeout(timer);
-  }, [enabledPlugins, query, scope, searchSuspended]);
+  }, [enabledPlugins, scope, searchQuery, searchSuspended]);
 
   const runPluginAction = useCallback(
     async (action: PluginItem["action"]) => {
@@ -502,23 +519,30 @@ export function useLauncher({
         {
           id: "command",
           label: scope.title,
-          color: "#7c3aed",
+          color: "var(--group-label)",
           items: [scopedItem(scope, argument)],
         },
       ];
     }
 
-    const base = buildGroups(allApps, fileResults, commands, query, runPath, {
+    const base = buildGroups(
+      allApps,
+      fileResults,
+      commands,
+      searchQuery,
+      runPath,
+      {
       app: t("groups.applications"),
       command: t("groups.commands"),
       file: t("groups.files"),
       applicationSubtitle: t("common.application"),
-    });
+      },
+    );
 
     const customItems = customCommands
       .map((command) => ({
         command,
-        score: command.enabled ? scoreCustomCommand(command, query) : 0,
+        score: command.enabled ? scoreCustomCommand(command, searchQuery) : 0,
       }))
       .filter((entry) => entry.score > 0)
       .sort((a, b) => b.score - a.score)
@@ -538,7 +562,7 @@ export function useLauncher({
     const commandGroup: ResultGroup = {
       id: "command",
       label: commandBase?.label ?? t("groups.commands"),
-      color: commandBase?.color ?? "#7c3aed",
+      color: commandBase?.color ?? "var(--group-label)",
       items: [...customItems, ...otherCommandItems],
     };
     const driveGroup: ResultGroup | null =
@@ -546,7 +570,7 @@ export function useLauncher({
         ? {
             id: "drive",
             label: t("groups.drives"),
-            color: "#0f766e",
+            color: "var(--group-label)",
             items: driveItems,
           }
         : null;
@@ -558,7 +582,7 @@ export function useLauncher({
         ? {
             id: "plugin",
             label: pluginResults.plugin.name,
-            color: "#0d9488",
+            color: "var(--group-label)",
             items: pluginResults.items.map((item) =>
               pluginToItem(pluginResults.plugin, item),
             ),
@@ -577,7 +601,7 @@ export function useLauncher({
     fileResults,
     pluginResults,
     pluginToItem,
-    query,
+    searchQuery,
     runPath,
     scope,
     scopedItem,
@@ -735,7 +759,7 @@ export function useLauncher({
   }, [showNonce]);
 
   useEffect(() => {
-    const trimmed = query.trim();
+    const trimmed = searchQuery.trim();
     const requestId = ++searchRequest.current;
 
     // Inside a command scope the text is the command argument, not a file query.
@@ -760,7 +784,7 @@ export function useLauncher({
     }, 35);
 
     return () => window.clearTimeout(timer);
-  }, [query, scope, searchSuspended, settings.fileSearch]);
+  }, [scope, searchQuery, searchSuspended, settings.fileSearch]);
 
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
@@ -918,6 +942,7 @@ export function useLauncher({
     query,
     scope,
     argument,
+    activateScope,
     setQuery,
     groups,
     items,

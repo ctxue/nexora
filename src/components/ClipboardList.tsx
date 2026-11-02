@@ -1,6 +1,7 @@
 import {
   Clipboard,
   CornerDownLeft,
+  Settings2,
   Pin,
   PinOff,
   Trash2,
@@ -13,12 +14,14 @@ import { useI18n } from "../i18n";
 
 interface ClipboardListProps {
   entries: ClipboardEntry[];
+  enabled: boolean;
   selectedIndex: number;
   onSelect: (index: number) => void;
   onCopy: (entry: ClipboardEntry) => void;
   onTogglePin: (entry: ClipboardEntry) => void;
   onRemove: (entry: ClipboardEntry) => void;
   onClear: () => void;
+  onOpenSettings: () => void;
 }
 
 function formatTimestamp(value: number): string {
@@ -32,12 +35,14 @@ function formatTimestamp(value: number): string {
 
 export function ClipboardList({
   entries,
+  enabled,
   selectedIndex,
   onSelect,
   onCopy,
   onTogglePin,
   onRemove,
   onClear,
+  onOpenSettings,
 }: ClipboardListProps) {
   const { t } = useI18n();
   const selectedRef = useRef<HTMLButtonElement>(null);
@@ -64,12 +69,36 @@ export function ClipboardList({
         </button>
       </div>
 
-      {entries.length === 0 ? (
+      {!enabled ? (
+        <div className="clipboard-disabled">
+          <span className="clipboard-disabled-icon" aria-hidden="true">
+            <Clipboard size={17} strokeWidth={1.7} />
+          </span>
+          <div className="clipboard-disabled-copy">
+            <div className="clipboard-disabled-title">
+              {t("clipboard.disabledTitle")}
+            </div>
+            <div className="clipboard-disabled-description">
+              {t("clipboard.disabledDescription")}
+            </div>
+          </div>
+          <button
+            type="button"
+            className="clipboard-disabled-action"
+            onClick={onOpenSettings}
+          >
+            <Settings2 size={12} strokeWidth={1.9} />
+            {t("clipboard.openSettings")}
+          </button>
+        </div>
+      ) : null}
+
+      {entries.length === 0 && enabled ? (
         <div className="clipboard-empty">
           <Clipboard size={20} strokeWidth={1.6} />
           <span>{t("clipboard.empty")}</span>
         </div>
-      ) : (
+      ) : entries.length > 0 ? (
         <div
           className="clipboard-list"
           role="listbox"
@@ -136,7 +165,7 @@ export function ClipboardList({
             );
           })}
         </div>
-      )}
+      ) : null}
 
       <div className="clipboard-note">{t("clipboard.note")}</div>
     </div>

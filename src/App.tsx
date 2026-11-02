@@ -1,8 +1,16 @@
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 
 import { AnimatedHeight } from "./components/AnimatedHeight";
 import { ClipboardList } from "./components/ClipboardList";
+import { ConfirmDialog } from "./components/ConfirmDialog";
 import { Footer } from "./components/Footer";
 import { QuickActions } from "./components/QuickActions";
 import { RecentList } from "./components/RecentList";
@@ -13,10 +21,15 @@ import { useManualApps } from "./features/apps/useManualApps";
 import { useCommands } from "./features/commands/useCommands";
 import { useClipboard } from "./features/clipboard/useClipboard";
 import { filterClipboardEntries } from "./features/clipboard/filter";
+import { clipboardUiReducer, INITIAL_CLIPBOARD_UI } from "./features/clipboard/ui";
 import { useIndexFolders } from "./features/indexes/useIndexFolders";
 import { useLauncher } from "./features/launcher/useLauncher";
 import { usePlugins } from "./features/plugins/usePlugins";
 import { useSettings } from "./features/settings/useSettings";
+import {
+  requestSettingsSection,
+  type SettingsSectionId,
+} from "./features/settings/navigation";
 import type { Settings } from "./features/settings/types";
 import { I18nProvider, useI18n } from "./i18n";
 import { platform } from "./platform/tauri";
@@ -40,8 +53,13 @@ function Launcher({ settings }: { settings: Settings }) {
   const { plugins, disabled: disabledPlugins } = usePlugins();
   const clipboard = useClipboard();
   const [indexedApps, setIndexedApps] = useState<AppEntry[]>([]);
-  const [clipboardOpen, setClipboardOpen] = useState(false);
-  const [clipboardSelected, setClipboardSelected] = useState(0);
+  const [clipboardUi, dispatchClipboardUi] = useReducer(
+    clipboardUiReducer,
+    INITIAL_CLIPBOARD_UI,
+  );
+  const [clearingClipboard, setClearingClipboard] = useState(false);
+  const clipboardOpen = clipboardUi.open;
+  const clipboardSelected = clipboardUi.selectedIndex;
 
   useEffect(() => {
     if (indexFolders.length === 0) {
@@ -71,19 +89,20 @@ function Launcher({ settings }: { settings: Settings }) {
     input.select();
   }, []);
 
-  const openSettings = useCallback(() => {
+  const openSettings = useCallback((section?: SettingsSectionId) => {
+    requestSettingsSection(section ?? null);
     void platform.openSettingsWindow();
   }, []);
 
   const openClipboard = useCallback(() => {
-    setClipboardOpen(true);
-    setClipboardSelected(0);
+    dispatchClipboardUi({ type: "open" });
   }, []);
 
   const {
     query,
     scope,
     argument,
+    activateScope,
     setQuery,
     groups,
     selectedIndex,
@@ -116,15 +135,30 @@ function Launcher({ settings }: { settings: Settings }) {
   });
 
   const visibleClipboardEntries = useMemo(
-    () => filterClipboardEntries(clipboard.entries, query),
-    [clipboard.entries, query],
+    () =>
+      clipboardOpen ? filterClipboardEntries(clipboard.entries, query) : [],
+    [clipboard.entries, clipboardOpen, query],
   );
 
   const closeClipboard = useCallback(() => {
-    setClipboardOpen(false);
-    setClipboardSelected(0);
+    dispatchClipboardUi({ type: "close" });
     clearQuery();
   }, [clearQuery]);
+
+  const clearClipboardHistory = useCallback(async () => {
+    if (clearingClipboard) return;
+    setClearingClipboard(true);
+    try {
+      await clipboard.clear();
+      dispatchClipboardUi({ type: "confirm-clear" });
+      window.requestAnimationFrame(focusSearchInput);
+    } catch {
+      dispatchClipboardUi({ type: "cancel-clear" });
+      showToast(t("toast.actionFailed"));
+    } finally {
+      setClearingClipboard(false);
+    }
+  }, [clearingClipboard, clipboard, focusSearchInput, showToast, t]);
 
   const copyClipboardEntry = useCallback(
     async (entry: (typeof visibleClipboardEntries)[number]) => {
@@ -142,18 +176,19 @@ function Launcher({ settings }: { settings: Settings }) {
   const moveClipboardSelection = useCallback(
     (delta: number) => {
       if (visibleClipboardEntries.length === 0) return;
-      setClipboardSelected((current) => {
-        const next = current + delta;
-        return Math.max(0, Math.min(next, visibleClipboardEntries.length - 1));
+      dispatchClipboardUi({
+        type: "move",
+        delta,
+        itemCount: visibleClipboardEntries.length,
       });
     },
     [visibleClipboardEntries.length],
   );
 
   useEffect(() => {
-    setClipboardSelected((current) => {
-      if (visibleClipboardEntries.length === 0) return 0;
-      return Math.min(current, visibleClipboardEntries.length - 1);
+    dispatchClipboardUi({
+      type: "clamp",
+      itemCount: visibleClipboardEntries.length,
     });
   }, [visibleClipboardEntries.length]);
 
@@ -202,8 +237,7 @@ function Launcher({ settings }: { settings: Settings }) {
     let unlisten: (() => void) | undefined;
     void platform.onLauncherHidden(() => {
       if (mounted) {
-        setClipboardOpen(false);
-        setClipboardSelected(0);
+        dispatchClipboardUi({ type: "close" });
       }
     }).then((dispose) => {
       if (mounted) unlisten = dispose;
@@ -233,6 +267,8 @@ function Launcher({ settings }: { settings: Settings }) {
       }
 
       if (clipboardOpen) {
+        if (clipboardUi.clearConfirmationOpen) return;
+
         if (event.key === "ArrowDown") {
           event.preventDefault();
           moveClipboardSelection(1);
@@ -302,6 +338,7 @@ function Launcher({ settings }: { settings: Settings }) {
     clearQuery,
     clipboardOpen,
     clipboardSelected,
+    clipboardUi.clearConfirmationOpen,
     closeClipboard,
     confirmSelection,
     copyClipboardEntry,
@@ -356,17 +393,18 @@ function Launcher({ settings }: { settings: Settings }) {
               if (clipboardOpen) {
                 setQuery(value);
               } else if (scope) {
-                setQuery(`${scope.keyword} ${value}`);
+                setQuery(`${scope.keyword}\t${value}`);
               } else {
                 setQuery(value);
               }
             }}
             onDragStart={() => void platform.startDragging()}
+            onActivateScope={activateScope}
             onClear={() => {
               if (clipboardOpen) {
                 clearQuery();
               } else if (scope) {
-                setQuery(`${scope.keyword} `);
+                setQuery(`${scope.keyword}\t`);
               } else {
                 clearQuery();
               }
@@ -384,20 +422,22 @@ function Launcher({ settings }: { settings: Settings }) {
             <>
               <div className="search-divider" />
 
-              <AnimatedHeight>
+              <AnimatedHeight animate={!query.trim() || clipboardOpen}>
                 {clipboardOpen ? (
                   <ClipboardList
                     entries={visibleClipboardEntries}
                     selectedIndex={clipboardSelected}
-                    onSelect={setClipboardSelected}
+                    enabled={settings.clipboardHistory}
+                    onSelect={(index) =>
+                      dispatchClipboardUi({ type: "select", index })
+                    }
                     onCopy={(entry) => void copyClipboardEntry(entry)}
                     onTogglePin={(entry) => void clipboard.togglePin(entry.id)}
                     onRemove={(entry) => void clipboard.remove(entry.id)}
-                    onClear={() => {
-                      if (window.confirm(t("clipboard.confirmClear"))) {
-                        void clipboard.clear();
-                      }
-                    }}
+                    onClear={() =>
+                      dispatchClipboardUi({ type: "request-clear" })
+                    }
+                    onOpenSettings={() => openSettings("features")}
                   />
                 ) : query.trim() ? (
                   <ResultList
@@ -434,6 +474,22 @@ function Launcher({ settings }: { settings: Settings }) {
                 onSettings={openSettings}
               />
             </>
+          ) : null}
+
+          {clipboardUi.clearConfirmationOpen ? (
+            <ConfirmDialog
+              title={t("clipboard.confirmClearTitle")}
+              description={t("clipboard.confirmClear")}
+              cancelLabel={t("common.cancel")}
+              confirmLabel={t("clipboard.clear")}
+              tone="danger"
+              busy={clearingClipboard}
+              onCancel={() => {
+                dispatchClipboardUi({ type: "cancel-clear" });
+                window.requestAnimationFrame(focusSearchInput);
+              }}
+              onConfirm={() => void clearClipboardHistory()}
+            />
           ) : null}
         </section>
 

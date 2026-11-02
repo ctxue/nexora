@@ -3,6 +3,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 interface AnimatedHeightProps {
   children: ReactNode;
   className?: string;
+  animate?: boolean;
 }
 
 /**
@@ -13,9 +14,10 @@ interface AnimatedHeightProps {
 export function AnimatedHeight({
   children,
   className = "",
+  animate = true,
 }: AnimatedHeightProps) {
+  const outerRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
-  const [height, setHeight] = useState<number | null>(null);
   const [ready, setReady] = useState(false);
 
   useLayoutEffect(() => {
@@ -27,7 +29,9 @@ export function AnimatedHeight({
 
     const measure = () => {
       frame = 0;
-      setHeight(node.getBoundingClientRect().height);
+      if (outerRef.current) {
+        outerRef.current.style.height = `${node.getBoundingClientRect().height}px`;
+      }
     };
 
     const observer = new ResizeObserver(() => {
@@ -51,10 +55,10 @@ export function AnimatedHeight({
 
   return (
     <div
-      className={`animated-height${ready ? " is-ready" : ""}${
+      ref={outerRef}
+      className={`animated-height${ready && animate ? " is-ready" : ""}${
         className ? ` ${className}` : ""
       }`}
-      style={height === null ? undefined : { height }}
     >
       <div className="animated-height-inner" ref={innerRef}>
         {children}

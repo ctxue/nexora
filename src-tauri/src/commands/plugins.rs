@@ -487,10 +487,7 @@ mod tests {
     }
 
     fn test_dir(name: &str) -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("target")
-            .join("test-tmp")
-            .join(format!("{name}-{}", std::process::id()))
+        std::env::temp_dir().join(format!("{name}-{}", std::process::id()))
     }
 
     #[test]

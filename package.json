@@ -7,9 +7,14 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "clean": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean.ps1",
+    "clean:all": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean.ps1 -IncludeNodeModules",
+    "clean:release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean.ps1 -ReleaseOnly",
     "test": "vitest run",
+    "test:scripts": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tests/release-workflow.tests.ps1",
     "test:watch": "vitest",
     "preview": "vite preview",
+    "release:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1",
     "tauri": "tauri"
   },
   "dependencies": {

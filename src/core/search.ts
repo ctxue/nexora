@@ -8,9 +8,9 @@ import type {
 } from "./types";
 
 const GROUP_META = {
-  app: { label: "Applications", color: "#2563eb" },
-  file: { label: "Files", color: "#d97706" },
-  command: { label: "Commands", color: "#7c3aed" },
+  app: { label: "Applications", color: "var(--group-label)" },
+  file: { label: "Files", color: "var(--group-label)" },
+  command: { label: "Commands", color: "var(--group-label)" },
 } as const;
 
 interface PinyinFields {

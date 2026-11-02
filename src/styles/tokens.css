@@ -74,11 +74,11 @@
   --preview-to: #e9e9ee;
 
   /* Semantic */
-  --accent: #4f46e5;
-  --accent-bg: #eef2ff;
-  --accent-border: #c7d2fe;
-  --selection-text: #1e1b4b;
-  --selection-bg: #c7d2fe;
+  --accent: #18181b;
+  --accent-bg: #f4f4f5;
+  --accent-border: #d4d4d8;
+  --selection-text: #18181b;
+  --selection-bg: #d4d4d8;
   --danger-text: #b91c1c;
   --danger-text-strong: #991b1b;
   --danger-bg: #fef2f2;
@@ -86,6 +86,12 @@
   --toast-bg: rgba(24, 24, 27, 0.94);
   --toast-text: #fafafa;
   --toast-border: rgba(255, 255, 255, 0.08);
+  --dialog-backdrop: rgba(24, 24, 27, 0.18);
+  --dialog-shadow: rgba(24, 24, 27, 0.18);
+  --button-primary-bg: #18181b;
+  --button-primary-hover: #27272a;
+  --button-primary-text: #fafafa;
+  --group-label: #8b8b93;
 }
 
 :root[data-theme="dark"] {
@@ -145,11 +151,11 @@
   --preview-to: #1d1d21;
 
   /* Semantic */
-  --accent: #a5b4fc;
-  --accent-bg: #232147;
-  --accent-border: #3730a3;
-  --selection-text: #eef2ff;
-  --selection-bg: #4338ca;
+  --accent: #e4e4e7;
+  --accent-bg: #2c2c33;
+  --accent-border: #4a4a53;
+  --selection-text: #fafafa;
+  --selection-bg: #52525b;
   --danger-text: #fca5a5;
   --danger-text-strong: #fecaca;
   --danger-bg: #2a1618;
@@ -157,6 +163,12 @@
   --toast-bg: rgba(63, 63, 70, 0.96);
   --toast-text: #fafafa;
   --toast-border: rgba(255, 255, 255, 0.12);
+  --dialog-backdrop: rgba(0, 0, 0, 0.42);
+  --dialog-shadow: rgba(0, 0, 0, 0.5);
+  --button-primary-bg: #e4e4e7;
+  --button-primary-hover: #f4f4f5;
+  --button-primary-text: #18181b;
+  --group-label: #71717a;
 }
 
 :root[data-font="inter"] {
@@ -176,22 +188,6 @@
 }
 
 /* ---------- Dark-theme details ---------- */
-:root[data-theme="dark"] .app-glyph,
-:root[data-theme="dark"] .file-glyph {
-  color: color-mix(in srgb, var(--glyph-color) 58%, #ffffff);
-  background: color-mix(in srgb, var(--glyph-color) 17%, transparent);
-  border-color: color-mix(in srgb, var(--glyph-color) 26%, transparent);
-}
-
-:root[data-theme="dark"] .group-label {
-  color: color-mix(in srgb, var(--group-color) 58%, #ffffff);
-}
-
-:root[data-theme="dark"] .group-dot {
-  background: color-mix(in srgb, var(--group-color) 58%, #ffffff);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--group-color) 20%, transparent);
-}
-
 :root[data-theme="dark"] .brand-mark {
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
 }

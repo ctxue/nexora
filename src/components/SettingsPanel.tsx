@@ -7,7 +7,7 @@ import {
   Upload,
   UserRound,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   FONT_SIZE_MAX,
@@ -25,6 +25,7 @@ import { useI18n } from "../i18n";
 import { Segmented, ShortcutKeys, SliderRow, Toggle } from "./settings/Controls";
 import { AppsSettings } from "./settings/AppsSettings";
 import { CommandsSettings } from "./settings/CommandsSettings";
+import { FeaturesSettings } from "./settings/FeaturesSettings";
 import { PluginsSettings } from "./settings/PluginsSettings";
 import {
   DEFAULT_SECTION,
@@ -40,6 +41,10 @@ import {
 import { useConfigurationTransfer } from "./settings/useConfigurationTransfer";
 import { useNotice } from "./settings/useNotice";
 import { useShortcutRecorder } from "./settings/useShortcutRecorder";
+import {
+  readRequestedSettingsSection,
+  SETTINGS_SECTION_REQUEST_KEY,
+} from "../features/settings/navigation";
 
 interface SettingsPanelProps {
   settings: Settings;
@@ -93,7 +98,9 @@ export function SettingsPanel({
   onUninstallPlugin,
 }: SettingsPanelProps) {
   const { t } = useI18n();
-  const [activeSection, setActiveSection] = useState<SectionId>(DEFAULT_SECTION);
+  const [activeSection, setActiveSection] = useState<SectionId>(
+    () => readRequestedSettingsSection() ?? DEFAULT_SECTION,
+  );
   const [startupBusy, setStartupBusy] = useState(false);
   const { notice, showNotice } = useNotice();
   const { recording, toggleRecording, stopRecording } =
@@ -105,6 +112,23 @@ export function SettingsPanel({
     onCommandsChange,
     showNotice,
   });
+
+  useEffect(() => {
+    const applyRequestedSection = () => {
+      const section = readRequestedSettingsSection();
+      if (section) setActiveSection(section);
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== SETTINGS_SECTION_REQUEST_KEY) return;
+      applyRequestedSection();
+    };
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("focus", applyRequestedSection);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("focus", applyRequestedSection);
+    };
+  }, []);
 
   const toggleStartup = async () => {
     if (startupBusy) return;
@@ -487,6 +511,10 @@ export function SettingsPanel({
             />
           ) : null}
 
+          {activeSection === "features" ? (
+            <FeaturesSettings settings={settings} onChange={onChange} />
+          ) : null}
+
           {activeSection === "plugins" ? (
             <PluginsSettings
               plugins={plugins}
@@ -675,26 +703,6 @@ export function SettingsPanel({
                     checked={settings.fileSearch}
                     onClick={() => onChange({ fileSearch: !settings.fileSearch })}
                     label={t("settings.fileSearch")}
-                  />
-                </div>
-
-                <div className="settings-row">
-                  <div className="settings-copy">
-                    <div className="settings-label">
-                      {t("settings.clipboardHistory")}
-                    </div>
-                    <div className="settings-description">
-                      {t("settings.clipboardHistoryHint")}
-                    </div>
-                  </div>
-                  <Toggle
-                    checked={settings.clipboardHistory}
-                    onClick={() =>
-                      onChange({
-                        clipboardHistory: !settings.clipboardHistory,
-                      })
-                    }
-                    label={t("settings.clipboardHistory")}
                   />
                 </div>
               </div>

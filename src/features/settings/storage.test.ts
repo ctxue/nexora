@@ -1,11 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_SETTINGS } from "./defaults";
 import {
   clampFontSize,
   clampRadius,
   clampShadow,
+  loadSettings,
   normalizeSettings,
+  saveSettings,
+  SETTINGS_KEY,
 } from "./storage";
 
 describe("normalizeSettings", () => {
@@ -27,6 +30,10 @@ describe("normalizeSettings", () => {
     expect(settings.fileSearch).toBe(false);
     expect(settings.shortcut).toBe(DEFAULT_SETTINGS.shortcut);
   });
+
+  it("keeps clipboard history paused by default", () => {
+    expect(normalizeSettings({}).clipboardHistory).toBe(false);
+  });
 });
 
 describe("appearance bounds", () => {
@@ -37,5 +44,30 @@ describe("appearance bounds", () => {
     expect(clampShadow(101)).toBe(100);
     expect(clampFontSize(8)).toBe(11);
     expect(clampFontSize(30)).toBe(17);
+  });
+});
+
+describe("loadSettings clipboard privacy upgrade", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("pauses a previously enabled clipboard once so the user can review it", () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value),
+      },
+    });
+    saveSettings({ ...DEFAULT_SETTINGS, clipboardHistory: true });
+
+    expect(loadSettings().clipboardHistory).toBe(false);
+    expect(JSON.parse(values.get(SETTINGS_KEY) ?? "{}").clipboardHistory).toBe(
+      false,
+    );
+
+    saveSettings({ ...DEFAULT_SETTINGS, clipboardHistory: true });
+    expect(loadSettings().clipboardHistory).toBe(true);
   });
 });
