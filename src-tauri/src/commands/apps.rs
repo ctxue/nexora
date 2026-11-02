@@ -62,12 +62,17 @@ pub fn start_file_index(app: AppHandle, index: tauri::State<'_, FileIndex>) -> b
 }
 
 #[tauri::command]
-pub fn search_files(
+pub async fn search_files(
     query: String,
     limit: usize,
     index: tauri::State<'_, FileIndex>,
-) -> Vec<FileEntry> {
-    scanning::search_files(&query, limit, index.inner())
+) -> Result<Vec<FileEntry>, String> {
+    let index = index.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        scanning::search_files(&query, limit, &index)
+    })
+    .await
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]

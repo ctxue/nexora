@@ -19,6 +19,10 @@ pub struct FileEntry {
     pub path: String,
     pub extension: String,
     pub parent: String,
+    #[serde(skip)]
+    pub search_name: String,
+    #[serde(skip)]
+    pub search_text: String,
 }
 
 #[derive(Clone, Serialize)]

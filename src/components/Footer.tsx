@@ -1,10 +1,4 @@
-import {
-  ArrowDown,
-  ArrowUp,
-  CornerDownLeft,
-  LoaderCircle,
-  Settings2,
-} from "lucide-react";
+import { Command, LoaderCircle, Settings2 } from "lucide-react";
 
 import { useI18n } from "../i18n";
 
@@ -12,6 +6,7 @@ interface FooterProps {
   indexing: boolean;
   fileCount: number | null;
   onSettings: () => void;
+  onActions: () => void;
   showActions: boolean;
 }
 
@@ -26,6 +21,7 @@ export function Footer({
   indexing,
   fileCount,
   onSettings,
+  onActions,
   showActions,
 }: FooterProps) {
   const { t } = useI18n();
@@ -33,37 +29,17 @@ export function Footer({
   return (
     <footer className="launcher-footer">
       <div className="footer-hints">
-        <span className="footer-hint">
-          <kbd className="key-icon">
-            <ArrowUp size={10} strokeWidth={2.2} />
-          </kbd>
-          <kbd className="key-icon">
-            <ArrowDown size={10} strokeWidth={2.2} />
-          </kbd>
-          <span>{t("footer.navigate")}</span>
-        </span>
-
-        <span className="footer-hint">
-          <kbd className="key-icon">
-            <CornerDownLeft size={10} strokeWidth={2.2} />
-          </kbd>
-          <span>{t("footer.open")}</span>
-        </span>
-
         {showActions ? (
-          <span className="footer-hint">
-            <kbd className="key-text">Ctrl</kbd>
-            <kbd className="key-icon">
-              <CornerDownLeft size={10} strokeWidth={2.2} />
-            </kbd>
+          <button
+            type="button"
+            className="footer-action"
+            onClick={onActions}
+          >
+            <Command size={11} strokeWidth={1.9} />
             <span>{t("footer.actions")}</span>
-          </span>
+            <kbd className="key-text">Ctrl K</kbd>
+          </button>
         ) : null}
-
-        <span className="footer-hint">
-          <kbd className="key-text">esc</kbd>
-          <span>{t("footer.close")}</span>
-        </span>
       </div>
 
       <div className="footer-right">

@@ -51,6 +51,7 @@ import type { Settings } from "../settings/types";
 import { useI18n } from "../../i18n";
 
 const RECENTS_KEY = "nexora.recents.v1";
+const FILE_SEARCH_DEBOUNCE_MS = 100;
 const QUICK_ACTION_IDS = [
   "open-downloads",
   "open-computer",
@@ -932,7 +933,7 @@ export function useLauncher({
             setFileResults([]);
           }
         });
-    }, 35);
+    }, FILE_SEARCH_DEBOUNCE_MS);
 
     return () => window.clearTimeout(timer);
   }, [scope, searchFilters, searchSuspended, settings.fileSearch]);
@@ -1100,6 +1101,7 @@ export function useLauncher({
     setQuery,
     groups,
     items,
+    navigateItems,
     selectedItem,
     selectedIndex,
     setSelectedIndex,

@@ -19,6 +19,7 @@ import { RecentList } from "./components/RecentList";
 import { ResultList } from "./components/ResultList";
 import { SearchBar } from "./components/SearchBar";
 import type { AppEntry, LauncherItem } from "./core/types";
+import { findPreviewIndex } from "./core/navigation";
 import { useManualApps } from "./features/apps/useManualApps";
 import { useCommands } from "./features/commands/useCommands";
 import { useClipboard } from "./features/clipboard/useClipboard";
@@ -26,6 +27,10 @@ import { filterClipboardEntries } from "./features/clipboard/filter";
 import { clipboardUiReducer, INITIAL_CLIPBOARD_UI } from "./features/clipboard/ui";
 import { useIndexFolders } from "./features/indexes/useIndexFolders";
 import { useLauncher } from "./features/launcher/useLauncher";
+import {
+  INITIAL_OVERLAY_STATE,
+  overlayReducer,
+} from "./features/launcher/overlays";
 import { buildResultActions } from "./features/actions/registry";
 import type { ResultActionDescriptor } from "./features/actions/types";
 import { useResultActions } from "./features/actions/useResultActions";
@@ -63,9 +68,14 @@ function Launcher({ settings }: { settings: Settings }) {
     INITIAL_CLIPBOARD_UI,
   );
   const [clearingClipboard, setClearingClipboard] = useState(false);
-  const [actionTarget, setActionTarget] = useState<LauncherItem | null>(null);
-  const [actionIndex, setActionIndex] = useState(0);
-  const [previewPath, setPreviewPath] = useState<string | null>(null);
+  const [overlays, dispatchOverlays] = useReducer(
+    overlayReducer,
+    INITIAL_OVERLAY_STATE,
+  );
+  const actionTarget = overlays.actionItem;
+  const actionIndex = overlays.actionIndex;
+  const previewItem = overlays.previewItem;
+  const previewPath = previewItem?.path ?? null;
   const clipboardOpen = clipboardUi.open;
   const clipboardSelected = clipboardUi.selectedIndex;
 
@@ -119,6 +129,7 @@ function Launcher({ settings }: { settings: Settings }) {
     moveSelection,
     confirmSelection,
     execute,
+    navigateItems,
     startItems,
     recents,
     removeRecent,
@@ -147,12 +158,11 @@ function Launcher({ settings }: { settings: Settings }) {
 
   const openActionPanel = useCallback((item: LauncherItem | null) => {
     if (!item || buildResultActions(item).length === 0) return;
-    setActionTarget(item);
-    setActionIndex(0);
+    dispatchOverlays({ type: "open-actions", item });
   }, []);
 
   const closeActionPanel = useCallback(() => {
-    setActionTarget(null);
+    dispatchOverlays({ type: "close-actions" });
     window.requestAnimationFrame(focusSearchInput);
   }, [focusSearchInput]);
 
@@ -160,7 +170,7 @@ function Launcher({ settings }: { settings: Settings }) {
     async (action: ResultActionDescriptor) => {
       const item = actionTarget;
       if (!item) return;
-      setActionTarget(null);
+      dispatchOverlays({ type: "close-actions" });
 
       try {
         switch (action.id) {
@@ -186,7 +196,7 @@ function Launcher({ settings }: { settings: Settings }) {
             hide();
             return;
           case "preview-file":
-            if (item.path) setPreviewPath(item.path);
+            dispatchOverlays({ type: "open-preview", item });
             return;
           case "activate-window":
           case "minimize-window":
@@ -210,6 +220,38 @@ function Launcher({ settings }: { settings: Settings }) {
     },
     [actionTarget, focusSearchInput, hide, showToast, t],
   );
+
+  const openPreview = useCallback((item: LauncherItem | null) => {
+    if (!item || item.kind !== "file" || !item.path) return;
+    dispatchOverlays({ type: "open-preview", item });
+  }, []);
+
+  const closePreview = useCallback(() => {
+    dispatchOverlays({ type: "close-preview" });
+    window.requestAnimationFrame(focusSearchInput);
+  }, [focusSearchInput]);
+
+  const movePreview = useCallback(
+    (delta: number) => {
+      const nextIndex = findPreviewIndex(navigateItems, selectedIndex, delta);
+      if (nextIndex === null) return;
+      const nextItem = navigateItems[nextIndex];
+      if (!nextItem) return;
+      setSelectedIndex(nextIndex);
+      dispatchOverlays({ type: "open-preview", item: nextItem });
+    },
+    [navigateItems, selectedIndex, setSelectedIndex],
+  );
+
+  const copyPreviewPath = useCallback(async () => {
+    if (!previewPath) return;
+    try {
+      await platform.copyClipboard(previewPath);
+      showToast(t("toast.resultCopied"));
+    } catch {
+      showToast(t("toast.actionFailed"));
+    }
+  }, [previewPath, showToast, t]);
 
   const visibleClipboardEntries = useMemo(
     () =>
@@ -315,6 +357,7 @@ function Launcher({ settings }: { settings: Settings }) {
     void platform.onLauncherHidden(() => {
       if (mounted) {
         dispatchClipboardUi({ type: "close" });
+        dispatchOverlays({ type: "close-all" });
       }
     }).then((dispose) => {
       if (mounted) unlisten = dispose;
@@ -330,13 +373,24 @@ function Launcher({ settings }: { settings: Settings }) {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.isComposing || event.keyCode === 229) return;
 
-      if (previewPath) {
-        if (event.key === "Escape") {
-          event.preventDefault();
-          setPreviewPath(null);
-          window.requestAnimationFrame(focusSearchInput);
-        } else {
-          event.preventDefault();
+      if (previewItem) {
+        event.preventDefault();
+        if (
+          event.key === "Escape" ||
+          ((event.ctrlKey || event.metaKey) && event.code === "Space")
+        ) {
+          closePreview();
+        } else if (event.key === "ArrowDown") {
+          movePreview(1);
+        } else if (event.key === "ArrowUp") {
+          movePreview(-1);
+        } else if (event.key === "Enter") {
+          void execute(previewItem);
+        } else if (
+          (event.ctrlKey || event.metaKey) &&
+          event.key.toLowerCase() === "c"
+        ) {
+          void copyPreviewPath();
         }
         return;
       }
@@ -344,17 +398,27 @@ function Launcher({ settings }: { settings: Settings }) {
       if (actionTarget) {
         if (event.key === "ArrowDown") {
           event.preventDefault();
-          setActionIndex((current) =>
-            Math.min(current + 1, Math.max(0, resultActions.length - 1)),
-          );
+          dispatchOverlays({
+            type: "move-actions",
+            delta: 1,
+            count: resultActions.length,
+          });
         } else if (event.key === "ArrowUp") {
           event.preventDefault();
-          setActionIndex((current) => Math.max(0, current - 1));
+          dispatchOverlays({
+            type: "move-actions",
+            delta: -1,
+            count: resultActions.length,
+          });
         } else if (event.key === "Enter") {
           event.preventDefault();
           const action = resultActions[actionIndex];
           if (action) void executeResultAction(action);
-        } else if (event.key === "Escape") {
+        } else if (
+          event.key === "Escape" ||
+          ((event.ctrlKey || event.metaKey) &&
+            event.key.toLowerCase() === "k")
+        ) {
           event.preventDefault();
           closeActionPanel();
         }
@@ -375,16 +439,13 @@ function Launcher({ settings }: { settings: Settings }) {
 
       if ((event.ctrlKey || event.metaKey) && event.code === "Space") {
         event.preventDefault();
-        if (selectedItem?.kind === "file" && selectedItem.path) {
-          setPreviewPath(selectedItem.path);
-        }
+        openPreview(selectedItem);
         return;
       }
 
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        inputRef.current?.focus();
-        inputRef.current?.select();
+        if (!clipboardOpen) openActionPanel(selectedItem);
         return;
       }
 
@@ -464,17 +525,22 @@ function Launcher({ settings }: { settings: Settings }) {
     clipboardSelected,
     clipboardUi.clearConfirmationOpen,
     closeClipboard,
+    closePreview,
     confirmSelection,
     copyClipboardEntry,
+    copyPreviewPath,
     closeActionPanel,
+    execute,
     executeResultAction,
     focusSearchInput,
     hide,
     moveSelection,
     moveClipboardSelection,
+    movePreview,
     openActionPanel,
+    openPreview,
     openSettings,
-    previewPath,
+    previewItem,
     query,
     resultActions,
     selectedItem,
@@ -521,7 +587,7 @@ function Launcher({ settings }: { settings: Settings }) {
             shortcut={settings.shortcut}
             inputRef={inputRef}
             onChange={(value) => {
-              setActionTarget(null);
+              dispatchOverlays({ type: "close-actions" });
               if (clipboardOpen) {
                 setQuery(value);
               } else if (scope) {
@@ -605,8 +671,10 @@ function Launcher({ settings }: { settings: Settings }) {
                 indexing={indexing}
                 fileCount={fileCount}
                 onSettings={openSettings}
+                onActions={() => openActionPanel(selectedItem)}
                 showActions={Boolean(
-                  selectedItem &&
+                  !clipboardOpen &&
+                    selectedItem &&
                     (selectedItem.path || selectedItem.windowId),
                 )}
               />
@@ -629,43 +697,50 @@ function Launcher({ settings }: { settings: Settings }) {
             />
           ) : null}
 
-          {actionTarget ? (
-            <ActionPanel
-              item={actionTarget}
-              actions={resultActions}
-              selectedIndex={actionIndex}
-              icons={icons}
-              onSelect={setActionIndex}
-              onRun={(action) => void executeResultAction(action)}
-              onClose={closeActionPanel}
-            />
-          ) : null}
-
-          {previewPath ? (
-            <PreviewPanel
-              path={previewPath}
-              onClose={() => {
-                setPreviewPath(null);
-                window.requestAnimationFrame(focusSearchInput);
-              }}
-            />
-          ) : null}
+          <AnimatePresence>
+            {toast ? (
+              <motion.div
+                className="toast"
+                initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 6, scale: 0.98 }}
+                transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                role="status"
+              >
+                {toast}
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
         </section>
 
-        <AnimatePresence>
-          {toast ? (
-            <motion.div
-              className="toast"
-              initial={{ opacity: 0, y: 8, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 6, scale: 0.98 }}
-              transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-              role="status"
-            >
-              {toast}
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
+        {actionTarget ? (
+          <ActionPanel
+            item={actionTarget}
+            actions={resultActions}
+            selectedIndex={actionIndex}
+            icons={icons}
+            onSelect={(index) =>
+              dispatchOverlays({
+                type: "move-actions",
+                delta: index - actionIndex,
+                count: resultActions.length,
+              })
+            }
+            onRun={(action) => void executeResultAction(action)}
+            onClose={closeActionPanel}
+          />
+        ) : null}
+
+        {previewItem && previewPath ? (
+          <PreviewPanel
+            item={previewItem}
+            path={previewPath}
+            onOpen={() => void execute(previewItem)}
+            onCopyPath={() => void copyPreviewPath()}
+            onClose={closePreview}
+          />
+        ) : null}
+
       </main>
     </MotionConfig>
   );

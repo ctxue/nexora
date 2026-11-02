@@ -39,6 +39,7 @@ export function SearchBar({
 }: SearchBarProps) {
   const { t } = useI18n();
   const [draft, setDraft] = useState(value);
+  const composing = useRef(false);
   const scopeKey = scope?.keyword ?? null;
   const previousScopeKey = useRef(scopeKey);
 
@@ -111,6 +112,17 @@ export function SearchBar({
         value={draft}
         onChange={(event) => {
           const next = event.target.value;
+          setDraft(next);
+          if (!composing.current) {
+            startTransition(() => onChange(next));
+          }
+        }}
+        onCompositionStart={() => {
+          composing.current = true;
+        }}
+        onCompositionEnd={(event) => {
+          composing.current = false;
+          const next = event.currentTarget.value;
           setDraft(next);
           startTransition(() => onChange(next));
         }}
