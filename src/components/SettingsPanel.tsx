@@ -478,6 +478,26 @@ export function SettingsPanel({
 
                 <div className="settings-row">
                   <div className="settings-copy">
+                    <div className="settings-label">
+                      {t("settings.launcherAnimation")}
+                    </div>
+                    <div className="settings-description">
+                      {t("settings.launcherAnimationHint")}
+                    </div>
+                  </div>
+                  <Toggle
+                    checked={settings.launcherAnimation}
+                    onClick={() =>
+                      onChange({
+                        launcherAnimation: !settings.launcherAnimation,
+                      })
+                    }
+                    label={t("settings.launcherAnimation")}
+                  />
+                </div>
+
+                <div className="settings-row">
+                  <div className="settings-copy">
                     <div className="settings-label">{t("settings.resetPosition")}</div>
                     <div className="settings-description">
                       {t("settings.resetPositionHint")}

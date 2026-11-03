@@ -34,6 +34,19 @@ describe("normalizeSettings", () => {
   it("keeps clipboard history paused by default", () => {
     expect(normalizeSettings({}).clipboardHistory).toBe(false);
   });
+
+  it("defaults to the entrance animation and a collapsed launcher", () => {
+    const settings = normalizeSettings({});
+
+    expect(settings.launcherAnimation).toBe(true);
+    expect(settings.windowMode).toBe("compact");
+  });
+
+  it("keeps an explicitly disabled entrance animation", () => {
+    const settings = normalizeSettings({ launcherAnimation: false });
+
+    expect(settings.launcherAnimation).toBe(false);
+  });
 });
 
 describe("appearance bounds", () => {
@@ -69,5 +82,30 @@ describe("loadSettings clipboard privacy upgrade", () => {
 
     saveSettings({ ...DEFAULT_SETTINGS, clipboardHistory: true });
     expect(loadSettings().clipboardHistory).toBe(true);
+  });
+});
+
+describe("loadSettings compact launcher upgrade", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("opens old stored configurations collapsed once", () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value),
+      },
+    });
+    saveSettings({ ...DEFAULT_SETTINGS, windowMode: "expanded" });
+
+    expect(loadSettings().windowMode).toBe("compact");
+    expect(JSON.parse(values.get(SETTINGS_KEY) ?? "{}").windowMode).toBe(
+      "compact",
+    );
+
+    saveSettings({ ...DEFAULT_SETTINGS, windowMode: "expanded" });
+    expect(loadSettings().windowMode).toBe("expanded");
   });
 });

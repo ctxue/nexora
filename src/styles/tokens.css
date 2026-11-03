@@ -65,6 +65,15 @@
   --highlight: rgba(255, 255, 255, 0.8);
   --nav-hover: rgba(255, 255, 255, 0.58);
   --shadow-rgb: 15, 23, 42;
+  --launcher-glass-glow: rgba(255, 255, 255, 0.28);
+  --launcher-glass-border: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.98) 0%,
+    rgba(194, 213, 232, 0.42) 18%,
+    rgba(255, 255, 255, 0.92) 42%,
+    rgba(207, 223, 239, 0.48) 68%,
+    rgba(255, 255, 255, 0.94) 100%
+  );
 
   /* Decorative */
   --avatar-from: #f7f7f8;
@@ -137,6 +146,15 @@
   --highlight: rgba(255, 255, 255, 0.05);
   --nav-hover: rgba(255, 255, 255, 0.05);
   --shadow-rgb: 0, 0, 0;
+  --launcher-glass-glow: rgba(255, 255, 255, 0.08);
+  --launcher-glass-border: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.32) 0%,
+    rgba(166, 198, 228, 0.16) 18%,
+    rgba(255, 255, 255, 0.22) 42%,
+    rgba(143, 180, 216, 0.14) 68%,
+    rgba(255, 255, 255, 0.26) 100%
+  );
 
   /* A black shadow needs more weight to read against a dark desktop. */
   --launcher-shadow-1: 0.95;

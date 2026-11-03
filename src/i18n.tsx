@@ -139,6 +139,9 @@ const en: Record<string, string> = {
   "settings.modeExpandedHint": "Show recent items and quick actions",
   "settings.modeCompact": "Compact",
   "settings.modeCompactHint": "Only the search bar until you type",
+  "settings.launcherAnimation": "Entrance animation",
+  "settings.launcherAnimationHint":
+    "Spring the launcher from 110% to its resting width when it opens",
   "settings.search": "Search",
   "settings.showRecent": "Show recent items",
   "settings.showRecentHint": "Show recently opened apps, files, and commands",
@@ -421,6 +424,9 @@ const zh: Record<string, string> = {
   "settings.modeExpandedHint": "显示最近使用和快捷操作",
   "settings.modeCompact": "紧凑模式",
   "settings.modeCompactHint": "只显示搜索框，输入后才展开",
+  "settings.launcherAnimation": "启动弹性动画",
+  "settings.launcherAnimationHint":
+    "启动器打开时从 110% 宽度弹性收束到静止尺寸",
   "settings.search": "搜索",
   "settings.showRecent": "显示最近使用",
   "settings.showRecentHint": "显示最近打开的应用、文件和命令",

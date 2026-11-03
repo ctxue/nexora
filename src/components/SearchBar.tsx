@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import type { CommandIcon } from "../core/types";
+import { shouldSyncSearchInput } from "../features/launcher/searchInput";
 import { useI18n } from "../i18n";
 import { BrandMark } from "./BrandMark";
 import { CommandGlyphIcon } from "./CommandGlyph";
@@ -38,7 +39,8 @@ export function SearchBar({
   onClearScope,
 }: SearchBarProps) {
   const { t } = useI18n();
-  const [draft, setDraft] = useState(value);
+  const [hasDraft, setHasDraft] = useState(Boolean(value));
+  const draft = useRef(value);
   const composing = useRef(false);
   const scopeKey = scope?.keyword ?? null;
   const previousScopeKey = useRef(scopeKey);
@@ -53,14 +55,32 @@ export function SearchBar({
   }, [inputRef]);
 
   useLayoutEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
     const scopeChanged = previousScopeKey.current !== scopeKey;
     previousScopeKey.current = scopeKey;
-    const inputFocused = document.activeElement === inputRef.current;
-    if (scopeChanged || value === "" || !inputFocused) {
-      setDraft(value);
+    const inputFocused = document.activeElement === input;
+    if (
+      shouldSyncSearchInput({
+        externalValue: value,
+        currentValue: input.value,
+        scopeChanged,
+        inputFocused,
+      })
+    ) {
+      input.value = value;
+      draft.current = value;
+      setHasDraft(Boolean(value));
       if (scopeChanged) resetCaret();
     }
   }, [inputRef, resetCaret, scopeKey, value]);
+
+  const clearDraft = useCallback(() => {
+    const input = inputRef.current;
+    if (input) input.value = "";
+    draft.current = "";
+    setHasDraft(false);
+  }, [inputRef]);
 
   return (
     <div
@@ -96,7 +116,7 @@ export function SearchBar({
           title={t("search.clearScope")}
           aria-label={`${t("search.removeScope")}: ${scope.title}`}
           onClick={() => {
-            setDraft("");
+            clearDraft();
             onClearScope?.();
             resetCaret();
           }}
@@ -109,10 +129,11 @@ export function SearchBar({
       <input
         ref={inputRef}
         className="search-input"
-        value={draft}
+        defaultValue={value}
         onChange={(event) => {
-          const next = event.target.value;
-          setDraft(next);
+          const next = event.currentTarget.value;
+          draft.current = next;
+          setHasDraft(next.length > 0);
           if (!composing.current) {
             startTransition(() => onChange(next));
           }
@@ -123,20 +144,21 @@ export function SearchBar({
         onCompositionEnd={(event) => {
           composing.current = false;
           const next = event.currentTarget.value;
-          setDraft(next);
+          draft.current = next;
+          setHasDraft(next.length > 0);
           startTransition(() => onChange(next));
         }}
         onKeyDown={(event) => {
           if (event.key === "Tab" && !event.shiftKey) {
             event.preventDefault();
-            if (!scope && onActivateScope?.(draft)) {
-              setDraft("");
+            if (!scope && onActivateScope?.(draft.current)) {
+              clearDraft();
             }
             return;
           }
-          if (scope && event.key === "Backspace" && value === "") {
+          if (scope && event.key === "Backspace" && draft.current === "") {
             event.preventDefault();
-            setDraft("");
+            clearDraft();
             onClearScope?.();
             resetCaret();
           }
@@ -157,12 +179,12 @@ export function SearchBar({
         autoFocus
       />
 
-      {draft ? (
+      {hasDraft ? (
         <button
           type="button"
           className="clear-button"
           onClick={() => {
-            setDraft("");
+            clearDraft();
             onClear();
             resetCaret();
           }}

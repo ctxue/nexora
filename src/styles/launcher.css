@@ -13,13 +13,20 @@
   /* Three stacked layers, all scaled by the shadow slider: a wide ambient
      pool, a mid contact shadow, and a hairline right under the edge. */
   box-shadow:
+    0 0 9px 0 var(--launcher-glass-glow),
     0 20px 46px -12px
       rgba(var(--shadow-rgb), calc(var(--launcher-shadow-1) * var(--shadow-scale))),
     0 8px 18px -8px
       rgba(var(--shadow-rgb), calc(var(--launcher-shadow-2) * var(--shadow-scale))),
     0 2px 4px -1px
       rgba(var(--shadow-rgb), calc(var(--launcher-shadow-3) * var(--shadow-scale)));
-  transform-origin: top center;
+  top: 0;
+  transition:
+    top 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.launcher-card.is-lifted {
+  top: -3px;
 }
 
 .launcher-card::before {
@@ -855,6 +862,23 @@
   position: fixed;
   inset: 0;
   z-index: 30;
+  pointer-events: none;
+}
+
+.launcher-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  padding: 1px;
+  border-radius: inherit;
+  background: var(--launcher-glass-border);
+  filter: blur(0.2px);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
   pointer-events: none;
 }
 

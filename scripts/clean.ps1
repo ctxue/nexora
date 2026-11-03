@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
   [string]$ProjectRoot = "",
+  [switch]$DebugOnly,
   [switch]$ReleaseOnly,
   [switch]$IncludeNodeModules
 )
@@ -12,6 +13,9 @@ trap {
 }
 if ([string]::IsNullOrWhiteSpace($ProjectRoot)) {
   $ProjectRoot = Split-Path -Parent $PSScriptRoot
+}
+if ($DebugOnly -and $ReleaseOnly) {
+  throw "DebugOnly and ReleaseOnly cannot be used together."
 }
 $root = [System.IO.Path]::GetFullPath($ProjectRoot).TrimEnd("\", "/")
 $rootPrefix = $root + [System.IO.Path]::DirectorySeparatorChar
@@ -41,7 +45,9 @@ function Remove-GeneratedPath {
 $srcTauri = Join-Path $root "src-tauri"
 $targets = @()
 
-if ($ReleaseOnly) {
+if ($DebugOnly) {
+  $targets += Join-Path $srcTauri "target\debug"
+} elseif ($ReleaseOnly) {
   $targets += Join-Path $root "logs"
   $targets += Join-Path $root "release"
   $targets += Join-Path $srcTauri "target\release"
@@ -54,10 +60,12 @@ if ($ReleaseOnly) {
   $targets += Join-Path $srcTauri "target"
 }
 
-$targets += Get-ChildItem -LiteralPath $srcTauri -Directory -Filter "target-*" -ErrorAction SilentlyContinue |
-  Select-Object -ExpandProperty FullName
+if (-not $DebugOnly) {
+  $targets += Get-ChildItem -LiteralPath $srcTauri -Directory -Filter "target-*" -ErrorAction SilentlyContinue |
+    Select-Object -ExpandProperty FullName
+}
 
-if ($IncludeNodeModules) {
+if (-not $DebugOnly -and $IncludeNodeModules) {
   $targets += Join-Path $root "node_modules"
 }
 

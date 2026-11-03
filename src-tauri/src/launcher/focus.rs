@@ -7,12 +7,9 @@
 //!   characters land on the frame (which beeps). Those keys are buffered and
 //!   replayed once the webview is ready.
 
-use std::{
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Mutex,
-    },
-    time::Duration,
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex,
 };
 
 use tauri::WebviewWindow;
@@ -30,8 +27,6 @@ use windows::Win32::{
         },
     },
 };
-
-use crate::config::{EARLY_KEY_QUIET_POLL, EARLY_KEY_QUIET_POLLS, EARLY_KEY_QUIET_TARGET};
 
 /// Set while the launcher is visible but the webview may not accept keys yet.
 pub static CAPTURE_KEYS: AtomicBool = AtomicBool::new(false);
@@ -118,8 +113,9 @@ pub fn replay_early_keys() {
     }
 }
 
-/// Waits until the webview owns the keyboard, then until the current burst of
-/// typing stops, so the replay keeps the typed order.
+/// Waits until the webview owns the keyboard, then immediately replays the
+/// short warm-up buffer and switches to direct typing. Waiting for a quiet
+/// pause here made every burst typed right after opening appear in one batch.
 pub fn wait_for_input_then_replay(window: &WebviewWindow) {
     let Ok(handle) = window.hwnd() else {
         CAPTURE_KEYS.store(false, Ordering::Relaxed);
@@ -132,24 +128,6 @@ pub fn wait_for_input_then_replay(window: &WebviewWindow) {
             break;
         }
         std::thread::sleep(crate::config::FOCUS_RETRY_INTERVAL);
-    }
-
-    let mut quiet = 0;
-    let mut previous_len = EARLY_KEYS.lock().map(|keys| keys.len()).unwrap_or(0);
-    for _ in 0..EARLY_KEY_QUIET_POLLS {
-        std::thread::sleep(Duration::from_millis(
-            EARLY_KEY_QUIET_POLL.as_millis() as u64
-        ));
-        let length = EARLY_KEYS.lock().map(|keys| keys.len()).unwrap_or(0);
-        if length == previous_len {
-            quiet += 1;
-            if quiet >= EARLY_KEY_QUIET_TARGET {
-                break;
-            }
-        } else {
-            quiet = 0;
-            previous_len = length;
-        }
     }
 
     replay_early_keys();

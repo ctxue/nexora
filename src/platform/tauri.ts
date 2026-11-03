@@ -304,6 +304,10 @@ export const platform = {
     return listen("launcher-hidden", handler);
   },
 
+  onLauncherDragEnded(handler: () => void): Promise<UnlistenFn> {
+    return listen("launcher-drag-ended", handler);
+  },
+
   onFilesIndexed(handler: (count: number) => void): Promise<UnlistenFn> {
     return listen<number>("files-indexed", (event) => handler(event.payload));
   },

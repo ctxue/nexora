@@ -28,6 +28,11 @@ import { clipboardUiReducer, INITIAL_CLIPBOARD_UI } from "./features/clipboard/u
 import { useIndexFolders } from "./features/indexes/useIndexFolders";
 import { useLauncher } from "./features/launcher/useLauncher";
 import {
+  launcherCardMotionFor,
+  type LauncherVisibilityEvent,
+} from "./features/launcher/entrance";
+import { shouldSelectSearchInput } from "./features/launcher/searchInput";
+import {
   INITIAL_OVERLAY_STATE,
   overlayReducer,
 } from "./features/launcher/overlays";
@@ -57,6 +62,15 @@ export default function App() {
 function Launcher({ settings }: { settings: Settings }) {
   const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
+  const [launcherVisibility, setLauncherVisibility] =
+    useState<LauncherVisibilityEvent>(() =>
+      "__TAURI_INTERNALS__" in window ? "hidden" : "shown",
+    );
+  const [launcherDragging, setLauncherDragging] = useState(false);
+  const launcherMotion = launcherCardMotionFor(
+    launcherVisibility,
+    settings.launcherAnimation,
+  );
   const { commands } = useCommands();
   const { apps: manualApps } = useManualApps();
   const { folders: indexFolders, updatedAt: indexUpdatedAt } = useIndexFolders();
@@ -103,8 +117,9 @@ function Launcher({ settings }: { settings: Settings }) {
   const focusSearchInput = useCallback(() => {
     const input = inputRef.current;
     if (!input) return;
+    const inputFocused = document.activeElement === input;
     input.focus({ preventScroll: true });
-    input.select();
+    if (shouldSelectSearchInput(inputFocused)) input.select();
   }, []);
 
   const openSettings = useCallback((section?: SettingsSectionId) => {
@@ -353,12 +368,39 @@ function Launcher({ settings }: { settings: Settings }) {
 
   useEffect(() => {
     let mounted = true;
-    let unlisten: (() => void) | undefined;
+    let unlistenShown: (() => void) | undefined;
+    let unlistenHidden: (() => void) | undefined;
+    void platform
+      .onLauncherShown(() => {
+        if (mounted) setLauncherVisibility("shown");
+      })
+      .then((dispose) => {
+        if (mounted) unlistenShown = dispose;
+        else dispose();
+      });
     void platform.onLauncherHidden(() => {
       if (mounted) {
+        setLauncherVisibility("hidden");
+        setLauncherDragging(false);
         dispatchClipboardUi({ type: "close" });
         dispatchOverlays({ type: "close-all" });
       }
+    }).then((dispose) => {
+      if (mounted) unlistenHidden = dispose;
+      else dispose();
+    });
+    return () => {
+      mounted = false;
+      unlistenShown?.();
+      unlistenHidden?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    let unlisten: (() => void) | undefined;
+    void platform.onLauncherDragEnded(() => {
+      if (mounted) setLauncherDragging(false);
     }).then((dispose) => {
       if (mounted) unlisten = dispose;
       else dispose();
@@ -577,10 +619,16 @@ function Launcher({ settings }: { settings: Settings }) {
           }
         }}
       >
-        <section
-          className="launcher-card"
+        <motion.section
+          className={`launcher-card${launcherDragging ? " is-lifted" : ""}`}
           role="dialog"
           aria-label="NEXORA"
+          initial={false}
+          animate={{
+            width: launcherMotion.width,
+            opacity: launcherMotion.opacity,
+          }}
+          transition={launcherMotion.transition}
         >
           <SearchBar
             value={scope ? argument : query}
@@ -596,7 +644,14 @@ function Launcher({ settings }: { settings: Settings }) {
                 setQuery(value);
               }
             }}
-            onDragStart={() => void platform.startDragging()}
+            onDragStart={() => {
+              setLauncherDragging(true);
+              window.requestAnimationFrame(() => {
+                void platform.startDragging().catch(() => {
+                  setLauncherDragging(false);
+                });
+              });
+            }}
             onActivateScope={activateScope}
             onClear={() => {
               if (clipboardOpen) {
@@ -711,7 +766,7 @@ function Launcher({ settings }: { settings: Settings }) {
               </motion.div>
             ) : null}
           </AnimatePresence>
-        </section>
+        </motion.section>
 
         {actionTarget ? (
           <ActionPanel

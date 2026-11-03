@@ -17,6 +17,8 @@ export const SETTINGS_KEY = "nexora.settings.v1";
 const SHADOW_DEFAULT_MIGRATION_KEY = "nexora.settings.shadow-default.v1";
 /** One-time marker that pauses clipboard capture after privacy hardening. */
 const CLIPBOARD_PRIVACY_MIGRATION_KEY = "nexora.clipboard.privacy-pause.v1";
+/** One-time marker for the compact launcher default. */
+const COMPACT_DEFAULT_MIGRATION_KEY = "nexora.settings.compact-default.v1";
 
 export function clampRadius(value: unknown): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -69,7 +71,14 @@ export function normalizeSettings(parsed: unknown): Settings {
       typeof candidate.launchAtStartup === "boolean"
         ? candidate.launchAtStartup
         : DEFAULT_SETTINGS.launchAtStartup,
-    windowMode: candidate.windowMode === "compact" ? "compact" : "expanded",
+    launcherAnimation:
+      typeof candidate.launcherAnimation === "boolean"
+        ? candidate.launcherAnimation
+        : DEFAULT_SETTINGS.launcherAnimation,
+    windowMode:
+      candidate.windowMode === "compact" || candidate.windowMode === "expanded"
+        ? candidate.windowMode
+        : DEFAULT_SETTINGS.windowMode,
     fontFamily:
       candidate.fontFamily === "geist" || candidate.fontFamily === "system"
         ? candidate.fontFamily
@@ -113,6 +122,13 @@ export function loadSettings(): Settings {
       window.localStorage.setItem(CLIPBOARD_PRIVACY_MIGRATION_KEY, "1");
       if (settings.clipboardHistory) {
         settings.clipboardHistory = false;
+        changed = true;
+      }
+    }
+    if (window.localStorage.getItem(COMPACT_DEFAULT_MIGRATION_KEY) !== "1") {
+      window.localStorage.setItem(COMPACT_DEFAULT_MIGRATION_KEY, "1");
+      if (settings.windowMode === "expanded") {
+        settings.windowMode = "compact";
         changed = true;
       }
     }

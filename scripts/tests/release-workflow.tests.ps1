@@ -121,6 +121,20 @@ Test-Case "release cleanup removes old builds but keeps the debug cache" {
   }
 }
 
+Test-Case "debug cleanup removes only the development build" {
+  $fixture = New-ProjectFixture
+  try {
+    $result = Invoke-ProjectScript -Script $cleanScript -ProjectRoot $fixture -Arguments @("-DebugOnly")
+    Assert-True ($result.ExitCode -eq 0) "clean.ps1 failed: $($result.Output)"
+    Assert-True (-not (Test-Path -LiteralPath (Join-Path $fixture "src-tauri\target\debug"))) "debug target was not removed"
+    Assert-True (Test-Path -LiteralPath (Join-Path $fixture "src-tauri\target\release\nexora.exe")) "release target should be preserved"
+    Assert-True (Test-Path -LiteralPath (Join-Path $fixture "dist\index.html")) "dist should be preserved"
+    Assert-True (Test-Path -LiteralPath (Join-Path $fixture "src-tauri\target-release-old\release\nexora.exe")) "alternate targets should be preserved"
+  } finally {
+    Remove-Item -LiteralPath $fixture -Recurse -Force -ErrorAction SilentlyContinue
+  }
+}
+
 Test-Case "full cleanup removes generated frontend and Rust outputs without deleting dependencies" {
   $fixture = New-ProjectFixture
   try {

@@ -7,8 +7,8 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
 
 use crate::{
     config::{
-        EVENT_LAUNCHER_HIDDEN, EVENT_LAUNCHER_SHOWN, FOCUS_RETRY_INTERVAL, LAUNCHER_WINDOW,
-        TOGGLE_DEBOUNCE_MS,
+        EVENT_LAUNCHER_DRAG_ENDED, EVENT_LAUNCHER_HIDDEN, EVENT_LAUNCHER_SHOWN,
+        FOCUS_RETRY_INTERVAL, LAUNCHER_WINDOW, TOGGLE_DEBOUNCE_MS,
     },
     launcher::focus::{focus_launcher, wait_for_input_then_replay, CAPTURE_KEYS, EARLY_KEYS},
     state::LauncherState,
@@ -129,5 +129,6 @@ pub fn watch_drag_release(app: AppHandle) {
                 *dragging = false;
             }
         }
+        let _ = app.emit(EVENT_LAUNCHER_DRAG_ENDED, ());
     });
 }

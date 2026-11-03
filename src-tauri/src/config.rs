@@ -69,9 +69,6 @@ pub const FOCUS_GRACE: Duration = Duration::from_millis(150);
 /// Timings for the launcher focus warm-up (see `launcher::focus`).
 pub const FOCUS_RETRY_INTERVAL: Duration = Duration::from_millis(10);
 pub const FOCUS_RETRY_ATTEMPTS: usize = 40;
-pub const EARLY_KEY_QUIET_POLL: Duration = Duration::from_millis(20);
-pub const EARLY_KEY_QUIET_POLLS: usize = 30;
-pub const EARLY_KEY_QUIET_TARGET: usize = 3;
 pub const DRAG_POLL_INTERVAL: Duration = Duration::from_millis(30);
 pub const DRAG_MAX_DURATION: Duration = Duration::from_secs(5);
 
@@ -89,6 +86,7 @@ pub const TRAY_ID: &str = "main-tray";
 /// Tauri events shared with the frontend.
 pub const EVENT_LAUNCHER_SHOWN: &str = "launcher-shown";
 pub const EVENT_LAUNCHER_HIDDEN: &str = "launcher-hidden";
+pub const EVENT_LAUNCHER_DRAG_ENDED: &str = "launcher-drag-ended";
 pub const EVENT_FILES_INDEXED: &str = "files-indexed";
 pub const EVENT_SHORTCUT_CAPTURED: &str = "shortcut-captured";
 pub const EVENT_CLIPBOARD_UPDATED: &str = "clipboard-updated";

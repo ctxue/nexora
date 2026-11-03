@@ -19,6 +19,7 @@ const SETTINGS_FIELDS = [
   "fileSearch",
   "clipboardHistory",
   "launchAtStartup",
+  "launcherAnimation",
   "windowMode",
   "fontFamily",
   "theme",

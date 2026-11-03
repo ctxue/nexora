@@ -102,6 +102,16 @@ pnpm tauri dev        # 开发模式：Vite + Rust 热重载，自动打开启�
 
 开发模式下启动器窗口会立即出现；修改前端代码热更新，修改 Rust 代码会自动重编译并重启。
 
+`pnpm tauri dev` 会生成连接 `http://localhost:1420` 的实时开发进程，不要关闭 Vite 后直接打开
+对应的 `target/debug/nexora.exe`。如果需要一个可以直接双击、但仍带 debug 符号的可执行文件：
+
+```powershell
+pnpm build:debug
+```
+
+产物是 `src-tauri/target/debug/nexora.exe`，前端资源已经内嵌，不依赖 Vite。正式发布或做性能测试时
+应使用 release 构建。
+
 ## 构建与打包
 
 ### 1. 只构建可执行文件
@@ -147,6 +157,7 @@ pnpm tauri build --no-bundle
 
 ```powershell
 pnpm clean:release   # 删除 release、logs、target/release、旧 target-* 和测试临时目录
+pnpm clean:debug     # 只删除 target/debug 开发构建
 pnpm clean           # 再删除 dist、target/debug 和 tsconfig.tsbuildinfo
 pnpm clean:all       # 连 node_modules 一起删除
 ```
@@ -331,6 +342,7 @@ release/
 | 现象 | 处理 |
 | --- | --- |
 | 安装时提示“已保护你的电脑” | 未签名安装包，点「更多信息 → 仍要运行」 |
+| 打开 `target/debug/nexora.exe` 显示 `ERR_CONNECTION_REFUSED` | 该文件是 `pnpm tauri dev` 的实时开发构建；重新运行 `pnpm tauri dev`，或运行 `pnpm build:debug` 生成可直接双击的 debug 构建 |
 | `Alt + Space` 无反应 | 被其他软件占用；打开设置 → 通用 → 全局快捷键改成 `Ctrl + Alt + Q` 等组合 |
 | 启动后窗口不出现 | 检查托盘图标是否存在，点托盘 → 打开 NEXORA |
 | 干净安装缺 WebView2 | 安装包会自动下载；也可手动安装 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) |
