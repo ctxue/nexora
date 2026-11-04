@@ -1,6 +1,6 @@
 [package]
 name = "nexora"
-version = "0.3.0"
+version = "0.3.1"
 description = "NEXORA — one hub for apps, files, tools and workflows."
 authors = ["NEXORA"]
 edition = "2021"
