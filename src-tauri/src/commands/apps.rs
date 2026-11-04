@@ -68,11 +68,9 @@ pub async fn search_files(
     index: tauri::State<'_, FileIndex>,
 ) -> Result<Vec<FileEntry>, String> {
     let index = index.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        scanning::search_files(&query, limit, &index)
-    })
-    .await
-    .map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(move || scanning::search_files(&query, limit, &index))
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]

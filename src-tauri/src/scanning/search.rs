@@ -71,9 +71,7 @@ pub fn search_files(query: &str, limit: usize, index: &FileIndex) -> Vec<FileEnt
         .iter()
         .filter_map(|file| {
             let name = &file.search_name;
-            let contains_all = tokens
-                .iter()
-                .all(|token| file.search_text.contains(token));
+            let contains_all = tokens.iter().all(|token| file.search_text.contains(token));
             let fuzzy_score = if contains_all {
                 0
             } else {
