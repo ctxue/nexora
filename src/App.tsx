@@ -1,22 +1,50 @@
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 
 import { AnimatedHeight } from "./components/AnimatedHeight";
+import { ActionPanel } from "./components/ActionPanel";
 import { ClipboardList } from "./components/ClipboardList";
+import { ConfirmDialog } from "./components/ConfirmDialog";
 import { Footer } from "./components/Footer";
 import { QuickActions } from "./components/QuickActions";
+import { PreviewPanel } from "./components/PreviewPanel";
 import { RecentList } from "./components/RecentList";
 import { ResultList } from "./components/ResultList";
 import { SearchBar } from "./components/SearchBar";
-import type { AppEntry } from "./core/types";
+import type { AppEntry, LauncherItem } from "./core/types";
+import { findPreviewIndex } from "./core/navigation";
 import { useManualApps } from "./features/apps/useManualApps";
 import { useCommands } from "./features/commands/useCommands";
 import { useClipboard } from "./features/clipboard/useClipboard";
 import { filterClipboardEntries } from "./features/clipboard/filter";
+import { clipboardUiReducer, INITIAL_CLIPBOARD_UI } from "./features/clipboard/ui";
 import { useIndexFolders } from "./features/indexes/useIndexFolders";
 import { useLauncher } from "./features/launcher/useLauncher";
+import {
+  launcherCardMotionFor,
+  type LauncherVisibilityEvent,
+} from "./features/launcher/entrance";
+import { shouldSelectSearchInput } from "./features/launcher/searchInput";
+import {
+  INITIAL_OVERLAY_STATE,
+  overlayReducer,
+} from "./features/launcher/overlays";
+import { buildResultActions } from "./features/actions/registry";
+import type { ResultActionDescriptor } from "./features/actions/types";
+import { useResultActions } from "./features/actions/useResultActions";
 import { usePlugins } from "./features/plugins/usePlugins";
 import { useSettings } from "./features/settings/useSettings";
+import {
+  requestSettingsSection,
+  type SettingsSectionId,
+} from "./features/settings/navigation";
 import type { Settings } from "./features/settings/types";
 import { I18nProvider, useI18n } from "./i18n";
 import { platform } from "./platform/tauri";
@@ -34,14 +62,36 @@ export default function App() {
 function Launcher({ settings }: { settings: Settings }) {
   const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
+  const [launcherVisibility, setLauncherVisibility] =
+    useState<LauncherVisibilityEvent>(() =>
+      "__TAURI_INTERNALS__" in window ? "hidden" : "shown",
+    );
+  const [launcherDragging, setLauncherDragging] = useState(false);
+  const launcherMotion = launcherCardMotionFor(
+    launcherVisibility,
+    settings.launcherAnimation,
+  );
   const { commands } = useCommands();
   const { apps: manualApps } = useManualApps();
   const { folders: indexFolders, updatedAt: indexUpdatedAt } = useIndexFolders();
   const { plugins, disabled: disabledPlugins } = usePlugins();
   const clipboard = useClipboard();
   const [indexedApps, setIndexedApps] = useState<AppEntry[]>([]);
-  const [clipboardOpen, setClipboardOpen] = useState(false);
-  const [clipboardSelected, setClipboardSelected] = useState(0);
+  const [clipboardUi, dispatchClipboardUi] = useReducer(
+    clipboardUiReducer,
+    INITIAL_CLIPBOARD_UI,
+  );
+  const [clearingClipboard, setClearingClipboard] = useState(false);
+  const [overlays, dispatchOverlays] = useReducer(
+    overlayReducer,
+    INITIAL_OVERLAY_STATE,
+  );
+  const actionTarget = overlays.actionItem;
+  const actionIndex = overlays.actionIndex;
+  const previewItem = overlays.previewItem;
+  const previewPath = previewItem?.path ?? null;
+  const clipboardOpen = clipboardUi.open;
+  const clipboardSelected = clipboardUi.selectedIndex;
 
   useEffect(() => {
     if (indexFolders.length === 0) {
@@ -67,30 +117,34 @@ function Launcher({ settings }: { settings: Settings }) {
   const focusSearchInput = useCallback(() => {
     const input = inputRef.current;
     if (!input) return;
+    const inputFocused = document.activeElement === input;
     input.focus({ preventScroll: true });
-    input.select();
+    if (shouldSelectSearchInput(inputFocused)) input.select();
   }, []);
 
-  const openSettings = useCallback(() => {
+  const openSettings = useCallback((section?: SettingsSectionId) => {
+    requestSettingsSection(section ?? null);
     void platform.openSettingsWindow();
   }, []);
 
   const openClipboard = useCallback(() => {
-    setClipboardOpen(true);
-    setClipboardSelected(0);
+    dispatchClipboardUi({ type: "open" });
   }, []);
 
   const {
     query,
     scope,
     argument,
+    activateScope,
     setQuery,
     groups,
+    selectedItem,
     selectedIndex,
     setSelectedIndex,
     moveSelection,
     confirmSelection,
     execute,
+    navigateItems,
     startItems,
     recents,
     removeRecent,
@@ -115,16 +169,130 @@ function Launcher({ settings }: { settings: Settings }) {
     searchSuspended: clipboardOpen,
   });
 
+  const resultActions = useResultActions(actionTarget);
+
+  const openActionPanel = useCallback((item: LauncherItem | null) => {
+    if (!item || buildResultActions(item).length === 0) return;
+    dispatchOverlays({ type: "open-actions", item });
+  }, []);
+
+  const closeActionPanel = useCallback(() => {
+    dispatchOverlays({ type: "close-actions" });
+    window.requestAnimationFrame(focusSearchInput);
+  }, [focusSearchInput]);
+
+  const executeResultAction = useCallback(
+    async (action: ResultActionDescriptor) => {
+      const item = actionTarget;
+      if (!item) return;
+      dispatchOverlays({ type: "close-actions" });
+
+      try {
+        switch (action.id) {
+          case "copy-path":
+            if (!item.path) return;
+            await platform.copyClipboard(item.path);
+            showToast(t("toast.resultCopied"));
+            window.requestAnimationFrame(focusSearchInput);
+            return;
+          case "reveal-path":
+            if (!item.path) return;
+            await platform.revealPath(item.path);
+            hide();
+            return;
+          case "open-with":
+            if (!item.path) return;
+            await platform.openWith(item.path);
+            hide();
+            return;
+          case "run-as-admin":
+            if (!item.path) return;
+            await platform.runAsAdmin(item.path);
+            hide();
+            return;
+          case "preview-file":
+            dispatchOverlays({ type: "open-preview", item });
+            return;
+          case "activate-window":
+          case "minimize-window":
+          case "close-window":
+            if (!item.windowId) return;
+            await platform.controlWindow(
+              item.windowId,
+              action.id === "activate-window"
+                ? "activate"
+                : action.id === "minimize-window"
+                  ? "minimize"
+                  : "close",
+            );
+            hide();
+            return;
+        }
+      } catch {
+        showToast(t("toast.actionFailed"));
+        window.requestAnimationFrame(focusSearchInput);
+      }
+    },
+    [actionTarget, focusSearchInput, hide, showToast, t],
+  );
+
+  const openPreview = useCallback((item: LauncherItem | null) => {
+    if (!item || item.kind !== "file" || !item.path) return;
+    dispatchOverlays({ type: "open-preview", item });
+  }, []);
+
+  const closePreview = useCallback(() => {
+    dispatchOverlays({ type: "close-preview" });
+    window.requestAnimationFrame(focusSearchInput);
+  }, [focusSearchInput]);
+
+  const movePreview = useCallback(
+    (delta: number) => {
+      const nextIndex = findPreviewIndex(navigateItems, selectedIndex, delta);
+      if (nextIndex === null) return;
+      const nextItem = navigateItems[nextIndex];
+      if (!nextItem) return;
+      setSelectedIndex(nextIndex);
+      dispatchOverlays({ type: "open-preview", item: nextItem });
+    },
+    [navigateItems, selectedIndex, setSelectedIndex],
+  );
+
+  const copyPreviewPath = useCallback(async () => {
+    if (!previewPath) return;
+    try {
+      await platform.copyClipboard(previewPath);
+      showToast(t("toast.resultCopied"));
+    } catch {
+      showToast(t("toast.actionFailed"));
+    }
+  }, [previewPath, showToast, t]);
+
   const visibleClipboardEntries = useMemo(
-    () => filterClipboardEntries(clipboard.entries, query),
-    [clipboard.entries, query],
+    () =>
+      clipboardOpen ? filterClipboardEntries(clipboard.entries, query) : [],
+    [clipboard.entries, clipboardOpen, query],
   );
 
   const closeClipboard = useCallback(() => {
-    setClipboardOpen(false);
-    setClipboardSelected(0);
+    dispatchClipboardUi({ type: "close" });
     clearQuery();
   }, [clearQuery]);
+
+  const clearClipboardHistory = useCallback(async () => {
+    if (clearingClipboard) return;
+    setClearingClipboard(true);
+    try {
+      await clipboard.clear();
+      dispatchClipboardUi({ type: "confirm-clear" });
+      window.requestAnimationFrame(focusSearchInput);
+    } catch {
+      dispatchClipboardUi({ type: "cancel-clear" });
+      showToast(t("toast.actionFailed"));
+    } finally {
+      setClearingClipboard(false);
+    }
+  }, [clearingClipboard, clipboard, focusSearchInput, showToast, t]);
 
   const copyClipboardEntry = useCallback(
     async (entry: (typeof visibleClipboardEntries)[number]) => {
@@ -142,18 +310,19 @@ function Launcher({ settings }: { settings: Settings }) {
   const moveClipboardSelection = useCallback(
     (delta: number) => {
       if (visibleClipboardEntries.length === 0) return;
-      setClipboardSelected((current) => {
-        const next = current + delta;
-        return Math.max(0, Math.min(next, visibleClipboardEntries.length - 1));
+      dispatchClipboardUi({
+        type: "move",
+        delta,
+        itemCount: visibleClipboardEntries.length,
       });
     },
     [visibleClipboardEntries.length],
   );
 
   useEffect(() => {
-    setClipboardSelected((current) => {
-      if (visibleClipboardEntries.length === 0) return 0;
-      return Math.min(current, visibleClipboardEntries.length - 1);
+    dispatchClipboardUi({
+      type: "clamp",
+      itemCount: visibleClipboardEntries.length,
     });
   }, [visibleClipboardEntries.length]);
 
@@ -199,12 +368,39 @@ function Launcher({ settings }: { settings: Settings }) {
 
   useEffect(() => {
     let mounted = true;
-    let unlisten: (() => void) | undefined;
+    let unlistenShown: (() => void) | undefined;
+    let unlistenHidden: (() => void) | undefined;
+    void platform
+      .onLauncherShown(() => {
+        if (mounted) setLauncherVisibility("shown");
+      })
+      .then((dispose) => {
+        if (mounted) unlistenShown = dispose;
+        else dispose();
+      });
     void platform.onLauncherHidden(() => {
       if (mounted) {
-        setClipboardOpen(false);
-        setClipboardSelected(0);
+        setLauncherVisibility("hidden");
+        setLauncherDragging(false);
+        dispatchClipboardUi({ type: "close" });
+        dispatchOverlays({ type: "close-all" });
       }
+    }).then((dispose) => {
+      if (mounted) unlistenHidden = dispose;
+      else dispose();
+    });
+    return () => {
+      mounted = false;
+      unlistenShown?.();
+      unlistenHidden?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    let unlisten: (() => void) | undefined;
+    void platform.onLauncherDragEnded(() => {
+      if (mounted) setLauncherDragging(false);
     }).then((dispose) => {
       if (mounted) unlisten = dispose;
       else dispose();
@@ -219,20 +415,85 @@ function Launcher({ settings }: { settings: Settings }) {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.isComposing || event.keyCode === 229) return;
 
+      if (previewItem) {
+        event.preventDefault();
+        if (
+          event.key === "Escape" ||
+          ((event.ctrlKey || event.metaKey) && event.code === "Space")
+        ) {
+          closePreview();
+        } else if (event.key === "ArrowDown") {
+          movePreview(1);
+        } else if (event.key === "ArrowUp") {
+          movePreview(-1);
+        } else if (event.key === "Enter") {
+          void execute(previewItem);
+        } else if (
+          (event.ctrlKey || event.metaKey) &&
+          event.key.toLowerCase() === "c"
+        ) {
+          void copyPreviewPath();
+        }
+        return;
+      }
+
+      if (actionTarget) {
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          dispatchOverlays({
+            type: "move-actions",
+            delta: 1,
+            count: resultActions.length,
+          });
+        } else if (event.key === "ArrowUp") {
+          event.preventDefault();
+          dispatchOverlays({
+            type: "move-actions",
+            delta: -1,
+            count: resultActions.length,
+          });
+        } else if (event.key === "Enter") {
+          event.preventDefault();
+          const action = resultActions[actionIndex];
+          if (action) void executeResultAction(action);
+        } else if (
+          event.key === "Escape" ||
+          ((event.ctrlKey || event.metaKey) &&
+            event.key.toLowerCase() === "k")
+        ) {
+          event.preventDefault();
+          closeActionPanel();
+        }
+        return;
+      }
+
       if ((event.ctrlKey || event.metaKey) && event.key === ",") {
         event.preventDefault();
         openSettings();
         return;
       }
 
+      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+        event.preventDefault();
+        openActionPanel(selectedItem);
+        return;
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.code === "Space") {
+        event.preventDefault();
+        openPreview(selectedItem);
+        return;
+      }
+
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        inputRef.current?.focus();
-        inputRef.current?.select();
+        if (!clipboardOpen) openActionPanel(selectedItem);
         return;
       }
 
       if (clipboardOpen) {
+        if (clipboardUi.clearConfirmationOpen) return;
+
         if (event.key === "ArrowDown") {
           event.preventDefault();
           moveClipboardSelection(1);
@@ -299,17 +560,32 @@ function Launcher({ settings }: { settings: Settings }) {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
+    actionIndex,
+    actionTarget,
     clearQuery,
     clipboardOpen,
     clipboardSelected,
+    clipboardUi.clearConfirmationOpen,
     closeClipboard,
+    closePreview,
     confirmSelection,
     copyClipboardEntry,
+    copyPreviewPath,
+    closeActionPanel,
+    execute,
+    executeResultAction,
+    focusSearchInput,
     hide,
     moveSelection,
     moveClipboardSelection,
+    movePreview,
+    openActionPanel,
+    openPreview,
     openSettings,
+    previewItem,
     query,
+    resultActions,
+    selectedItem,
     scope,
     setQuery,
     visibleClipboardEntries,
@@ -343,30 +619,45 @@ function Launcher({ settings }: { settings: Settings }) {
           }
         }}
       >
-        <section
-          className="launcher-card"
+        <motion.section
+          className={`launcher-card${launcherDragging ? " is-lifted" : ""}`}
           role="dialog"
           aria-label="NEXORA"
+          initial={false}
+          animate={{
+            width: launcherMotion.width,
+            opacity: launcherMotion.opacity,
+          }}
+          transition={launcherMotion.transition}
         >
           <SearchBar
             value={scope ? argument : query}
             shortcut={settings.shortcut}
             inputRef={inputRef}
             onChange={(value) => {
+              dispatchOverlays({ type: "close-actions" });
               if (clipboardOpen) {
                 setQuery(value);
               } else if (scope) {
-                setQuery(`${scope.keyword} ${value}`);
+                setQuery(`${scope.keyword}\t${value}`);
               } else {
                 setQuery(value);
               }
             }}
-            onDragStart={() => void platform.startDragging()}
+            onDragStart={() => {
+              setLauncherDragging(true);
+              window.requestAnimationFrame(() => {
+                void platform.startDragging().catch(() => {
+                  setLauncherDragging(false);
+                });
+              });
+            }}
+            onActivateScope={activateScope}
             onClear={() => {
               if (clipboardOpen) {
                 clearQuery();
               } else if (scope) {
-                setQuery(`${scope.keyword} `);
+                setQuery(`${scope.keyword}\t`);
               } else {
                 clearQuery();
               }
@@ -384,20 +675,22 @@ function Launcher({ settings }: { settings: Settings }) {
             <>
               <div className="search-divider" />
 
-              <AnimatedHeight>
+              <AnimatedHeight animate={!query.trim() || clipboardOpen}>
                 {clipboardOpen ? (
                   <ClipboardList
                     entries={visibleClipboardEntries}
                     selectedIndex={clipboardSelected}
-                    onSelect={setClipboardSelected}
+                    enabled={settings.clipboardHistory}
+                    onSelect={(index) =>
+                      dispatchClipboardUi({ type: "select", index })
+                    }
                     onCopy={(entry) => void copyClipboardEntry(entry)}
                     onTogglePin={(entry) => void clipboard.togglePin(entry.id)}
                     onRemove={(entry) => void clipboard.remove(entry.id)}
-                    onClear={() => {
-                      if (window.confirm(t("clipboard.confirmClear"))) {
-                        void clipboard.clear();
-                      }
-                    }}
+                    onClear={() =>
+                      dispatchClipboardUi({ type: "request-clear" })
+                    }
+                    onOpenSettings={() => openSettings("features")}
                   />
                 ) : query.trim() ? (
                   <ResultList
@@ -407,6 +700,7 @@ function Launcher({ settings }: { settings: Settings }) {
                     selectedIndex={selectedIndex}
                     onSelect={setSelectedIndex}
                     onExecute={execute}
+                    onActions={openActionPanel}
                   />
                 ) : settings.showRecent && recents.length > 0 ? (
                   <RecentList
@@ -432,25 +726,76 @@ function Launcher({ settings }: { settings: Settings }) {
                 indexing={indexing}
                 fileCount={fileCount}
                 onSettings={openSettings}
+                onActions={() => openActionPanel(selectedItem)}
+                showActions={Boolean(
+                  !clipboardOpen &&
+                    selectedItem &&
+                    (selectedItem.path || selectedItem.windowId),
+                )}
               />
             </>
           ) : null}
-        </section>
 
-        <AnimatePresence>
-          {toast ? (
-            <motion.div
-              className="toast"
-              initial={{ opacity: 0, y: 8, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 6, scale: 0.98 }}
-              transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-              role="status"
-            >
-              {toast}
-            </motion.div>
+          {clipboardUi.clearConfirmationOpen ? (
+            <ConfirmDialog
+              title={t("clipboard.confirmClearTitle")}
+              description={t("clipboard.confirmClear")}
+              cancelLabel={t("common.cancel")}
+              confirmLabel={t("clipboard.clear")}
+              tone="danger"
+              busy={clearingClipboard}
+              onCancel={() => {
+                dispatchClipboardUi({ type: "cancel-clear" });
+                window.requestAnimationFrame(focusSearchInput);
+              }}
+              onConfirm={() => void clearClipboardHistory()}
+            />
           ) : null}
-        </AnimatePresence>
+
+          <AnimatePresence>
+            {toast ? (
+              <motion.div
+                className="toast"
+                initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 6, scale: 0.98 }}
+                transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                role="status"
+              >
+                {toast}
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        </motion.section>
+
+        {actionTarget ? (
+          <ActionPanel
+            item={actionTarget}
+            actions={resultActions}
+            selectedIndex={actionIndex}
+            icons={icons}
+            onSelect={(index) =>
+              dispatchOverlays({
+                type: "move-actions",
+                delta: index - actionIndex,
+                count: resultActions.length,
+              })
+            }
+            onRun={(action) => void executeResultAction(action)}
+            onClose={closeActionPanel}
+          />
+        ) : null}
+
+        {previewItem && previewPath ? (
+          <PreviewPanel
+            item={previewItem}
+            path={previewPath}
+            onOpen={() => void execute(previewItem)}
+            onCopyPath={() => void copyPreviewPath()}
+            onClose={closePreview}
+          />
+        ) : null}
+
       </main>
     </MotionConfig>
   );

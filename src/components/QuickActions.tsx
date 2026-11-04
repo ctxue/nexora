@@ -57,9 +57,6 @@ export function QuickActions({
         })}
       </div>
 
-      <div className="start-panel-note">
-        {t("quick.note")}
-      </div>
     </div>
   );
 }

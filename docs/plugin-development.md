@@ -23,7 +23,7 @@ com.example.ip/
 1. 打开 `设置 → 插件 → 安装插件`；
 2. 选择包含 `plugin.json` 的文件夹；
 3. 插件会被复制到 `%APPDATA%\com.nexora.desktop\plugins\<id>\`；
-4. 在启动器输入插件关键词 + 空格 + 参数，例如 `ip 8.8.8.8`。
+4. 在启动器输入插件关键词和参数，例如 `ip 8.8.8.8`。
 
 安装示例插件：选择本仓库的 `examples/plugins/ip` 文件夹。
 

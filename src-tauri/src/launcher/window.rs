@@ -7,8 +7,8 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
 
 use crate::{
     config::{
-        EVENT_LAUNCHER_HIDDEN, EVENT_LAUNCHER_SHOWN, FOCUS_RETRY_INTERVAL, LAUNCHER_WINDOW,
-        TOGGLE_DEBOUNCE_MS,
+        EVENT_LAUNCHER_DRAG_ENDED, EVENT_LAUNCHER_HIDDEN, EVENT_LAUNCHER_SHOWN,
+        FOCUS_RETRY_INTERVAL, LAUNCHER_WINDOW, TOGGLE_DEBOUNCE_MS,
     },
     launcher::focus::{focus_launcher, wait_for_input_then_replay, CAPTURE_KEYS, EARLY_KEYS},
     state::LauncherState,
@@ -29,6 +29,9 @@ pub fn show_launcher(app: &AppHandle) {
     apply_window_icon(&window);
 
     if let Some(state) = app.try_state::<LauncherState>() {
+        if let Ok(mut selected) = state.selected_text.lock() {
+            *selected = crate::platform::selection::capture_focused_selection();
+        }
         if let Ok(mut shown_at) = state.shown_at.lock() {
             *shown_at = Some(Instant::now());
         }
@@ -65,6 +68,12 @@ pub fn hide_launcher(app: &AppHandle) {
     let Some(window) = app.get_webview_window(LAUNCHER_WINDOW) else {
         return;
     };
+
+    if let Some(state) = app.try_state::<LauncherState>() {
+        if let Ok(mut selected) = state.selected_text.lock() {
+            selected.clear();
+        }
+    }
 
     CAPTURE_KEYS.store(false, std::sync::atomic::Ordering::Relaxed);
     if let Ok(mut keys) = EARLY_KEYS.lock() {
@@ -120,5 +129,6 @@ pub fn watch_drag_release(app: AppHandle) {
                 *dragging = false;
             }
         }
+        let _ = app.emit(EVENT_LAUNCHER_DRAG_ENDED, ());
     });
 }

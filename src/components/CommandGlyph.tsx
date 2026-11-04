@@ -1,4 +1,6 @@
 import {
+  AppWindow,
+  Calculator,
   Clipboard,
   Download,
   Folder,
@@ -33,6 +35,8 @@ const COMMAND_ICONS: Record<CommandIcon, LucideIcon> = {
   link: Link2,
   folder: Folder,
   terminal: SquareTerminal,
+  calculator: Calculator,
+  window: AppWindow,
 };
 
 export function CommandGlyphIcon({

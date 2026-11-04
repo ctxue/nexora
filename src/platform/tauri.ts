@@ -7,6 +7,7 @@ import type {
   FileEntry,
   IconPayload,
   QuickPaths,
+  WindowEntry,
 } from "../core/types";
 
 export interface BrowserInfo {
@@ -60,6 +61,16 @@ export interface ClipboardEntry {
   pinned: boolean;
 }
 
+export interface PreviewData {
+  kind: "text" | "image" | "metadata";
+  title: string;
+  path: string;
+  content: string | null;
+  dataUrl: string | null;
+  metadata: string;
+  truncated: boolean;
+}
+
 export const platform = {
   listApps(): Promise<AppEntry[]> {
     return invoke<AppEntry[]>("list_apps");
@@ -79,6 +90,17 @@ export const platform = {
 
   searchFiles(query: string, limit = 8): Promise<FileEntry[]> {
     return invoke<FileEntry[]>("search_files", { query, limit });
+  },
+
+  listWindows(): Promise<WindowEntry[]> {
+    return invoke<WindowEntry[]>("list_windows");
+  },
+
+  controlWindow(
+    windowId: string,
+    action: "activate" | "minimize" | "close",
+  ): Promise<void> {
+    return invoke<void>("control_window", { windowId, action });
   },
 
   getIcons(paths: string[]): Promise<IconPayload[]> {
@@ -155,6 +177,30 @@ export const platform = {
 
   copyClipboard(text: string): Promise<void> {
     return invoke<void>("copy_clipboard", { text });
+  },
+
+  readClipboardText(): Promise<string> {
+    return invoke<string>("read_clipboard_text");
+  },
+
+  getSelectedText(): Promise<string> {
+    return invoke<string>("get_selected_text");
+  },
+
+  revealPath(path: string): Promise<void> {
+    return invoke<void>("reveal_path", { path });
+  },
+
+  openWith(path: string): Promise<void> {
+    return invoke<void>("open_with", { path });
+  },
+
+  runAsAdmin(path: string): Promise<void> {
+    return invoke<void>("run_as_admin", { path });
+  },
+
+  previewFile(path: string): Promise<PreviewData> {
+    return invoke<PreviewData>("preview_file", { path });
   },
 
   toggleClipboardPin(id: string): Promise<void> {
@@ -256,6 +302,10 @@ export const platform = {
 
   onLauncherHidden(handler: () => void): Promise<UnlistenFn> {
     return listen("launcher-hidden", handler);
+  },
+
+  onLauncherDragEnded(handler: () => void): Promise<UnlistenFn> {
+    return listen("launcher-drag-ended", handler);
   },
 
   onFilesIndexed(handler: (count: number) => void): Promise<UnlistenFn> {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { searchApps, searchCommands } from "./search";
+import { buildGroups, searchApps, searchCommands } from "./search";
 import type { AppEntry, LauncherCommand } from "./types";
 
 const apps: AppEntry[] = [
@@ -54,5 +54,70 @@ describe("searchCommands", () => {
     ];
 
     expect(searchCommands(commands, "settings")).toEqual(commands);
+  });
+});
+
+describe("buildGroups", () => {
+  const files = [
+    {
+      id: "pdf",
+      name: "Quarterly report.pdf",
+      path: "C:\\Users\\Ada\\Downloads\\Quarterly report.pdf",
+      extension: "pdf",
+      parent: "Downloads",
+    },
+    {
+      id: "text",
+      name: "Quarterly notes.txt",
+      path: "C:\\Users\\Ada\\Documents\\Quarterly notes.txt",
+      extension: "txt",
+      parent: "Documents",
+    },
+  ];
+
+  it("returns only applications for an app filter", () => {
+    const groups = buildGroups(
+      apps,
+      files,
+      [],
+      "code",
+      () => undefined,
+      undefined,
+      {
+        text: "code",
+        appOnly: true,
+        fileOnly: false,
+        recentOnly: false,
+        type: null,
+        folder: null,
+      },
+    );
+
+    expect(groups.map((group) => group.id)).toEqual(["app"]);
+    expect(groups[0].items[0].title).toBe("Visual Studio Code");
+  });
+
+  it("applies file type and folder filters to file results", () => {
+    const groups = buildGroups(
+      apps,
+      files,
+      [],
+      "quarterly",
+      () => undefined,
+      undefined,
+      {
+        text: "quarterly",
+        appOnly: false,
+        fileOnly: true,
+        recentOnly: false,
+        type: "pdf",
+        folder: "downloads",
+      },
+    );
+
+    expect(groups.map((group) => group.id)).toEqual(["file"]);
+    expect(groups[0].items.map((item) => item.title)).toEqual([
+      "Quarterly report.pdf",
+    ]);
   });
 });

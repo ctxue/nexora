@@ -223,6 +223,8 @@ pub fn scan_files() -> Vec<FileEntry> {
                 .parent()
                 .map(|parent| parent.to_string_lossy().to_string())
                 .unwrap_or_default();
+            let search_name = name.to_lowercase();
+            let search_text = format!("{} {}", search_name, path_string.to_lowercase());
 
             files.push(FileEntry {
                 id: format!("file:{path_string}"),
@@ -230,14 +232,15 @@ pub fn scan_files() -> Vec<FileEntry> {
                 path: path_string,
                 extension,
                 parent,
+                search_name,
+                search_text,
             });
         }
     }
 
     files.sort_by(|a, b| {
-        a.name
-            .to_lowercase()
-            .cmp(&b.name.to_lowercase())
+        a.search_name
+            .cmp(&b.search_name)
             .then_with(|| a.path.cmp(&b.path))
     });
     files

@@ -20,6 +20,7 @@ pub struct LauncherState {
     pub shown_at: Mutex<Option<Instant>>,
     pub last_toggle: Mutex<Option<Instant>>,
     pub dragging: Mutex<bool>,
+    pub selected_text: Mutex<String>,
 }
 
 /// Currently registered global shortcut and the last error, if any.

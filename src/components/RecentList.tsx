@@ -88,9 +88,6 @@ export function RecentList({
         })}
       </div>
 
-      <div className="start-panel-note">
-        {t("recent.note")}
-      </div>
     </div>
   );
 }

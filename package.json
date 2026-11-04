@@ -1,15 +1,22 @@
 {
   "name": "nexora",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.3.1",
   "type": "module",
   "description": "NEXORA — one hub for apps, files, tools and workflows.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:debug": "tauri build --debug --no-bundle",
+    "clean": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean.ps1",
+    "clean:debug": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean.ps1 -DebugOnly",
+    "clean:all": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean.ps1 -IncludeNodeModules",
+    "clean:release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean.ps1 -ReleaseOnly",
     "test": "vitest run",
+    "test:scripts": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tests/release-workflow.tests.ps1",
     "test:watch": "vitest",
     "preview": "vite preview",
+    "release:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1",
     "tauri": "tauri"
   },
   "dependencies": {

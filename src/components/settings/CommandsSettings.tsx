@@ -97,7 +97,7 @@ export function CommandsSettings({
     const action = command.action;
     switch (action.kind) {
       case "web-search":
-        return `${command.keyword} + Space · ${commandHost(command) || action.template}`;
+        return `${command.keyword} + Tab · ${commandHost(command) || action.template}`;
       case "open-url":
         return `${browserLabel(action.browser)} · ${action.target}`;
       case "open-path":

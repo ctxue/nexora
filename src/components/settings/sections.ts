@@ -1,4 +1,5 @@
 import {
+  Blocks,
   LayoutGrid,
   Monitor,
   Moon,
@@ -13,15 +14,10 @@ import {
 
 import type { Settings, ThemeMode } from "../../features/settings/types";
 import { DEFAULT_SETTINGS } from "../../features/settings/defaults";
+import type { SettingsSectionId } from "../../features/settings/navigation";
 
 /** Identifiers of the settings pages that exist today. */
-export type SectionId =
-  | "profile"
-  | "general"
-  | "appearance"
-  | "apps"
-  | "commands"
-  | "plugins";
+export type SectionId = SettingsSectionId;
 
 /** Identifiers of every sidebar entry, including teasers for future pages. */
 export type NavId = SectionId | "plugins";
@@ -74,6 +70,7 @@ export const SECTIONS: SectionDefinition[] = [
   { id: "appearance", labelKey: "settings.appearance", icon: Palette },
   { id: "apps", labelKey: "settings.apps", icon: LayoutGrid },
   { id: "commands", labelKey: "settings.commands", icon: SquareTerminal },
+  { id: "features", labelKey: "settings.features", icon: Blocks },
   {
     id: "plugins",
     labelKey: "settings.plugins",

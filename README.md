@@ -6,7 +6,7 @@
 
 ## 界面预览
 
-启动器搜索应用、文件与命令，结果按类别分组；命令模式可以用「关键词 + 空格」把输入变成一个作用域标签；设置窗口覆盖外观、命令、应用、插件与配置备份。
+启动器搜索应用、文件与命令，结果按类别分组；命令模式可以用「关键词 + Tab」把输入变成一个作用域标签；设置窗口覆盖外观、内置功能、命令、应用、插件与配置备份。
 
 > 截图取自 v0.3.0 开发版，实际界面以当前构建为准。
 
@@ -17,7 +17,7 @@
       <sub>启动器 · 最近使用与快捷操作</sub>
     </td>
     <td width="50%" align="center">
-      <img src="docs/screenshots/command-scope.png" alt="命令模式：关键词 + 空格" width="440"><br>
+      <img src="docs/screenshots/command-scope.png" alt="命令模式：关键词 + Tab" width="440"><br>
       <sub>命令模式 · <code>Edge</code> + 空格 + 搜索内容</sub>
     </td>
   </tr>
@@ -62,7 +62,7 @@
 - 已安装应用：同时枚举 Windows **AppsFolder**（UWP / MSIX / 经典应用）与开始菜单 `.lnk`
 - 本机文件：桌面 / 文档 / 下载 / 图片，最多 20,000 条，内存索引
 - 磁盘：输入 `D` / `D:` / `D://` / `D盘` 直接打开对应磁盘根目录，支持固定 / 可移动 / 网络 / 内存盘
-- 剪贴板历史：自动记录最近复制的文本，可搜索、重新复制、固定、删除和清空
+- 剪贴板历史：用户开启后记录最近复制的文本，可搜索、重新复制、固定、删除和清空
 - 内置命令：打开下载、桌面、文档、此电脑、回收站，刷新索引，打开设置，退出
 - 模糊匹配：大小写不敏感、单词首字母（`vsc` → Visual Studio Code）、有序子序列、中文拼音（`wx` → 微信）
 - 真实 Windows 图标：通过 Shell 提取并裁剪空白边距
@@ -70,7 +70,7 @@
 **外观与配置**
 - 主题：跟随系统 / 浅色 / 深色（原生标题栏同步换色）
 - 外观：全局文字大小 11–17px、启动器圆角 0–28px、窗口阴影 0–100%（默认 100%）、界面字体（系统 / Inter / Geist）
-- 自定义命令：关键词 + 空格触发，支持网页搜索 / 打开网址 / 打开文件或文件夹 / 运行程序，每条命令可指定浏览器
+- 自定义命令：关键词 + Tab 触发，支持网页搜索 / 打开网址 / 打开文件或文件夹 / 运行程序，每条命令可指定浏览器
 - 文件索引：配置若干文件夹，里面的绿色软件会合并进「应用」搜索结果
 - 插件（Beta）：安装带 `plugin.json` 的插件文件夹，关键词触发、JSON-RPC 搜索、独立进程运行，可启停/卸载；协议见[插件开发指南](docs/plugin-development.md)，示例见 [`examples/plugins/ip`](examples/plugins/ip)
 - 配置备份：一键导出 / 导入设置 JSON（含自定义命令；插件与文件索引需在新机器重新配置）
@@ -102,6 +102,16 @@ pnpm tauri dev        # 开发模式：Vite + Rust 热重载，自动打开启�
 
 开发模式下启动器窗口会立即出现；修改前端代码热更新，修改 Rust 代码会自动重编译并重启。
 
+`pnpm tauri dev` 会生成连接 `http://localhost:1420` 的实时开发进程，不要关闭 Vite 后直接打开
+对应的 `target/debug/nexora.exe`。如果需要一个可以直接双击、但仍带 debug 符号的可执行文件：
+
+```powershell
+pnpm build:debug
+```
+
+产物是 `src-tauri/target/debug/nexora.exe`，前端资源已经内嵌，不依赖 Vite。正式发布或做性能测试时
+应使用 release 构建。
+
 ## 构建与打包
 
 ### 1. 只构建可执行文件
@@ -112,36 +122,57 @@ pnpm tauri build --no-bundle
 
 产物：`src-tauri/target/release/nexora.exe`（已内嵌前端资源，可直接运行）。
 
-### 2. 构建正式安装包（推荐分发）
+### 2. 构建并打包正式版本（推荐）
 
-```bash
-pnpm tauri build
+```powershell
+pnpm release:build
 ```
 
-产物：
+该命令会：
+
+- 检查 `package.json`、`Cargo.toml` 和 `tauri.conf.json` 的版本号完全一致；
+- 拒绝已有的额外 `src-tauri/target-*` 构建目录；
+- 只使用唯一构建目录 `src-tauri/target`；
+- 清理旧发布暂存目录，生成两个发布文件和 SHA-256 校验文件。
+
+最终产物：
 
 | 文件 | 说明 |
 | --- | --- |
-| `src-tauri/target/release/nexora.exe` | 主程序 |
-| `src-tauri/target/release/bundle/nsis/NEXORA_<版本>_x64-setup.exe` | NSIS 安装包（按用户安装到 `%LOCALAPPDATA%\NEXORA`，自带卸载器） |
+| `release/NEXORA_<版本>_x64-setup.exe` | NSIS 安装包 |
+| `release/NEXORA_<版本>_portable.zip` | 便携版，解压后直接运行 |
+| `release/SHA256SUMS.txt` | 两个发布文件的 SHA-256 |
 
 首次打包会自动下载 NSIS 工具链（仅一次，需要网络）。
 
-### 3. 生成便携包
+### 3. 查看构建文件
 
 ```powershell
-Compress-Archive -Path src-tauri/target/release/nexora.exe `
-  -DestinationPath release/NEXORA_<版本>_portable.zip -Force
+pnpm tauri build --no-bundle
 ```
 
-### 4. 发布清单
+产物是 `src-tauri/target/release/nexora.exe`。不要设置自定义 `CARGO_TARGET_DIR`，也不要创建 `target-release-<版本>`；发布脚本会拒绝这类并行构建目录。
 
-仓库里的 `release/` 目录存放可直接分发的两份产物（已加入 `.gitignore`，只作为本地暂存）：
+### 4. 清理生成物
+
+```powershell
+pnpm clean:release   # 删除 release、logs、target/release、旧 target-* 和测试临时目录
+pnpm clean:debug     # 只删除 target/debug 开发构建
+pnpm clean           # 再删除 dist、target/debug 和 tsconfig.tsbuildinfo
+pnpm clean:all       # 连 node_modules 一起删除
+```
+
+这些目录都是可重新生成的，不提交到 Git。当前 `target\debug` 是唯一开发缓存。
+
+### 5. 发布清单
+
+`release/` 是可随时重建的本地暂存目录：
 
 ```text
 release/
-├─ NEXORA_0.3.0_x64-setup.exe    # 双击安装
-└─ NEXORA_0.3.0_portable.zip     # 解压后直接运行 nexora.exe
+├─ NEXORA_<版本>_x64-setup.exe
+├─ NEXORA_<版本>_portable.zip
+└─ SHA256SUMS.txt
 ```
 
 发给别人时需要提醒两点：
@@ -174,13 +205,15 @@ release/
 - 配置保存在 WebView2 的 `localStorage`（`nexora.settings.v1`）与最近记录（`nexora.recents.v1`）中；卸载应用不会删除它们，因此重装后配置仍在。
 - 设置 → 个人 → **配置备份** 可导出 `nexora-settings.json`，换电脑后直接导入；自定义命令会一起带走（文件索引与插件需重新配置/安装）。
 - 设置 → 应用 → **文件索引**：添加任意文件夹（比如 `D:\Soft`），扫描到的绿色软件会合并进「应用」搜索结果。
-- 设置 → 命令：自定义网页搜索 / 打开网址 / 打开文件 / 运行程序；在启动器输入「关键词 + 空格」触发。
+- 设置 → 命令：自定义网页搜索 / 打开网址 / 打开文件 / 运行程序；在启动器输入「关键词 + Tab」触发。
 - 设置 → 插件（Beta）：安装包含 `plugin.json` 的文件夹；示例见 [`examples/plugins/ip`](examples/plugins/ip)，协议见[插件开发指南](docs/plugin-development.md)。
-- 设置 → 通用 → **剪贴板历史**：可暂停记录；已有记录不会被自动删除。
+- 设置 → **内置功能 → 剪贴板**：默认暂停；检查隐私说明后可主动开启。
 - 在启动器输入 `剪贴板` 或 `clipboard` 打开历史，输入内容可筛选，回车重新复制。
 - 开机启动写入 Windows 的 Run 注册项，登录后**后台静默启动**（只显示托盘图标）。
 
-剪贴板历史最多保留 200 条、单条最多 32,000 个字符，只记录 Unicode 文本。数据以明文 JSON 保存在应用数据目录的 `clipboard-history.json`，不会上传网络，也不会包含在配置导出中；处理敏感信息时可在设置中暂停记录。
+剪贴板历史最多保留 200 条、单条最多 32,000 个字符，只记录 Unicode 文本。历史文件使用 Windows DPAPI 绑定当前用户和电脑加密，不会上传网络，也不会包含在配置导出中。采集前会尊重 Windows 的剪贴板历史排除标记，并跳过能识别的密码、私钥、常见 API Token、JWT 和带敏感键名的配置值。旧版明文 `clipboard-history.json` 会自动清洗并迁移为加密文件。
+
+敏感内容识别是启发式保护，不可能覆盖所有密钥格式；最稳妥的方式仍是需要处理高敏感信息时关闭剪贴板历史。DPAPI 保护静态文件，但不能防御已经以同一 Windows 用户身份运行的恶意程序。
 
 ## 目录结构
 
@@ -213,7 +246,10 @@ release/
 | `components/settings/useConfigurationTransfer.ts` | 配置导入 / 导出流程 |
 | `components/settings/CommandsSettings.tsx` | 命令页：列表、编辑器、预设 |
 | `components/settings/AppsSettings.tsx` | 应用页：手动添加的应用 + 文件索引 |
+| `components/settings/ClipboardSettings.tsx` | 独立剪贴板页：启用开关与隐私能力说明 |
+| `components/settings/FeaturesSettings.tsx` | 内置功能页：集中管理剪贴板等功能 |
 | `components/settings/PluginsSettings.tsx` | 插件页：安装、启停、卸载 |
+| `components/ConfirmDialog.tsx` | 应用内确认框，保持焦点并统一危险操作样式 |
 | `core/commands.ts` | 自定义命令模型、解析、URL 模板、校验 |
 | `core/search.ts` | 命令列表、结果分组与排序 |
 | `core/types.ts` | 领域类型（条目、分组、图标） |
@@ -225,6 +261,7 @@ release/
 | `features/indexes/storage.ts` | 文件索引文件夹的存储与校验 |
 | `features/indexes/useIndexFolders.ts` | 文件索引 Hook：添加 / 移除 / 重扫 |
 | `features/clipboard/filter.ts` | 剪贴板筛选、置顶排序与预览生成 |
+| `features/clipboard/ui.ts` | 剪贴板打开、选择与清空确认状态机 |
 | `features/clipboard/useClipboard.ts` | 剪贴板列表、复制、固定、删除与清空 |
 | `features/plugins/usePlugins.ts` | 插件列表、启停状态、安装 / 卸载 |
 | `features/settings/types.ts` | `Settings` 与各枚举值（主题 / 字体 / 窗口模式） |
@@ -232,10 +269,11 @@ release/
 | `features/settings/storage.ts` | `localStorage` 读写与校验归一化 |
 | `features/settings/transfer.ts` | 导入导出 JSON 的结构与校验 |
 | `features/settings/appearance.ts` | 主题解析与首屏外观（避免闪白） |
+| `features/settings/navigation.ts` | 跨窗口定向打开设置分类 |
 | `features/settings/useSettings.ts` | 设置 Hook：跨窗口同步、应用到文档 |
 | `platform/tauri.ts` | Tauri 命令 / 事件的唯一适配层 |
 | `styles/tokens.css` | 设计令牌：颜色、圆角、字号比例、阴影（浅色 / 深色两套） |
-| `styles/base.css` | 复位、文档默认值、Toast、动效关键帧 |
+| `styles/base.css` | 复位、文档默认值、Toast、确认框、动效关键帧 |
 | `styles/launcher.css` | 启动器窗口全部样式 |
 | `styles/settings.css` | 设置窗口全部样式 |
 | `styles/index.css` | 样式入口，按 tokens → base → launcher → settings 顺序导入 |
@@ -304,6 +342,7 @@ release/
 | 现象 | 处理 |
 | --- | --- |
 | 安装时提示“已保护你的电脑” | 未签名安装包，点「更多信息 → 仍要运行」 |
+| 打开 `target/debug/nexora.exe` 显示 `ERR_CONNECTION_REFUSED` | 该文件是 `pnpm tauri dev` 的实时开发构建；重新运行 `pnpm tauri dev`，或运行 `pnpm build:debug` 生成可直接双击的 debug 构建 |
 | `Alt + Space` 无反应 | 被其他软件占用；打开设置 → 通用 → 全局快捷键改成 `Ctrl + Alt + Q` 等组合 |
 | 启动后窗口不出现 | 检查托盘图标是否存在，点托盘 → 打开 NEXORA |
 | 干净安装缺 WebView2 | 安装包会自动下载；也可手动安装 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) |

@@ -19,6 +19,20 @@ pub struct FileEntry {
     pub path: String,
     pub extension: String,
     pub parent: String,
+    #[serde(skip)]
+    pub search_name: String,
+    #[serde(skip)]
+    pub search_text: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowEntry {
+    pub id: String,
+    pub title: String,
+    pub process_name: String,
+    pub process_path: Option<String>,
+    pub minimized: bool,
 }
 
 #[derive(Clone, Serialize)]

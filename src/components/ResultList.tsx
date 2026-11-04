@@ -12,6 +12,7 @@ interface ResultListProps {
   selectedIndex: number;
   onSelect: (index: number) => void;
   onExecute: (item: LauncherItem) => void;
+  onActions: (item: LauncherItem) => void;
 }
 
 export function ResultList({
@@ -21,6 +22,7 @@ export function ResultList({
   selectedIndex,
   onSelect,
   onExecute,
+  onActions,
 }: ResultListProps) {
   const { t } = useI18n();
   const selectedRef = useRef<HTMLButtonElement>(null);
@@ -77,6 +79,11 @@ export function ResultList({
                 onMouseEnter={() => onSelect(index)}
                 onFocus={() => onSelect(index)}
                 onClick={() => onExecute(item)}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  onSelect(index);
+                  onActions(item);
+                }}
               >
                 <span className="result-icon" aria-hidden="true">
                   <ResultIcon

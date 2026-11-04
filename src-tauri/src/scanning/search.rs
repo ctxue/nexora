@@ -70,20 +70,21 @@ pub fn search_files(query: &str, limit: usize, index: &FileIndex) -> Vec<FileEnt
     let mut scored: Vec<(i32, &FileEntry)> = files
         .iter()
         .filter_map(|file| {
-            let name = file.name.to_lowercase();
-            let haystack = format!("{} {}", name, file.path.to_lowercase());
-            let contains_all = tokens.iter().all(|token| haystack.contains(token));
+            let name = &file.search_name;
+            let contains_all = tokens
+                .iter()
+                .all(|token| file.search_text.contains(token));
             let fuzzy_score = if contains_all {
                 0
             } else {
-                fuzzy_name_score(&query, &name)
+                fuzzy_name_score(&query, name)
             };
 
             if !contains_all && fuzzy_score == 0 {
                 return None;
             }
 
-            let score = if name == query {
+            let score = if name == &query {
                 140
             } else if name.starts_with(&query) {
                 110
@@ -102,7 +103,7 @@ pub fn search_files(query: &str, limit: usize, index: &FileIndex) -> Vec<FileEnt
     scored.sort_by(|a, b| {
         b.0.cmp(&a.0)
             .then_with(|| a.1.name.len().cmp(&b.1.name.len()))
-            .then_with(|| a.1.name.to_lowercase().cmp(&b.1.name.to_lowercase()))
+            .then_with(|| a.1.search_name.cmp(&b.1.search_name))
     });
 
     scored

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { platform, type PluginManifest } from "../../platform/tauri";
 import { useI18n } from "../../i18n";
 import { CommandGlyph } from "../CommandGlyph";
+import { ConfirmDialog } from "../ConfirmDialog";
 import { Toggle } from "./Controls";
 
 interface PluginsSettingsProps {
@@ -24,21 +25,30 @@ export function PluginsSettings({
   const { t } = useI18n();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [pending, setPending] = useState<
+    | { kind: "install"; source: string }
+    | { kind: "uninstall"; plugin: PluginManifest }
+    | null
+  >(null);
 
-  const install = async () => {
+  const installFrom = async (source: string) => {
     setMessage(null);
-    const folder = await platform.pickFolder();
-    if (!folder) return;
-
     setBusy(true);
     try {
-      const manifest = await onInstall(folder);
+      const manifest = await onInstall(source);
       setMessage(t("plugins.installed", { name: manifest.name }));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
       setBusy(false);
     }
+  };
+
+  const install = async () => {
+    setMessage(null);
+    const folder = await platform.pickFolder();
+    if (!folder) return;
+    setPending({ kind: "install", source: folder });
   };
 
   const openDirectory = async () => {
@@ -50,16 +60,28 @@ export function PluginsSettings({
     }
   };
 
-  const uninstall = async (plugin: PluginManifest) => {
-    if (!window.confirm(t("plugins.confirmUninstall", { name: plugin.name }))) {
-      return;
-    }
+  const uninstallFrom = async (plugin: PluginManifest) => {
     setMessage(null);
     try {
       await onUninstall(plugin.id);
       setMessage(t("plugins.uninstalled", { name: plugin.name }));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const confirmPending = async () => {
+    if (!pending || busy) return;
+    setBusy(true);
+    try {
+      if (pending.kind === "install") {
+        await installFrom(pending.source);
+      } else {
+        await uninstallFrom(pending.plugin);
+      }
+    } finally {
+      setBusy(false);
+      setPending(null);
     }
   };
 
@@ -142,7 +164,7 @@ export function PluginsSettings({
                 <button
                   type="button"
                   className="command-icon-button is-danger"
-                  onClick={() => void uninstall(plugin)}
+                  onClick={() => setPending({ kind: "uninstall", plugin })}
                   aria-label={t("commands.delete")}
                   title={t("commands.delete")}
                 >
@@ -155,6 +177,35 @@ export function PluginsSettings({
       )}
 
       <div className="plugin-hint">{t("plugins.hint")}</div>
+
+      {pending ? (
+        <ConfirmDialog
+          title={
+            pending.kind === "install"
+              ? t("plugins.installTitle")
+              : t("plugins.confirmUninstall", {
+                  name: pending.plugin.name,
+                })
+          }
+          description={
+            pending.kind === "install"
+              ? t("plugins.confirmInstall")
+              : t("plugins.confirmUninstallDescription")
+          }
+          cancelLabel={t("common.cancel")}
+          confirmLabel={
+            pending.kind === "install"
+              ? t("plugins.install")
+              : t("commands.delete")
+          }
+          tone={pending.kind === "uninstall" ? "danger" : "default"}
+          busy={busy}
+          onCancel={() => {
+            if (!busy) setPending(null);
+          }}
+          onConfirm={() => void confirmPending()}
+        />
+      ) : null}
     </div>
   );
 }

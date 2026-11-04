@@ -76,7 +76,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let plugin_root = app.path().app_data_dir()?.join("plugins");
     std::fs::create_dir_all(&plugin_root)?;
     app.manage(commands::plugins::PluginHost::new(plugin_root));
-    let clipboard_path = app.path().app_data_dir()?.join("clipboard-history.json");
+    let clipboard_path = app.path().app_data_dir()?.join("clipboard-history.bin");
     let clipboard = ClipboardHistory::new(clipboard_path);
     app.manage(clipboard.clone());
     start_monitor(app.handle().clone(), clipboard);
@@ -108,6 +108,11 @@ fn on_window_event(window: &tauri::Window, event: &WindowEvent) {
                 hooks::set_shortcut_capture(false);
                 let _ = window.hide();
             } else {
+                if let Some(state) = window.try_state::<LauncherState>() {
+                    if let Ok(mut selected) = state.selected_text.lock() {
+                        selected.clear();
+                    }
+                }
                 let _ = window.emit(EVENT_LAUNCHER_HIDDEN, ());
                 let _ = window.hide();
             }
@@ -133,6 +138,11 @@ fn on_window_event(window: &tauri::Window, event: &WindowEvent) {
                 return;
             }
 
+            if let Some(state) = window.try_state::<LauncherState>() {
+                if let Ok(mut selected) = state.selected_text.lock() {
+                    selected.clear();
+                }
+            }
             let _ = window.emit(EVENT_LAUNCHER_HIDDEN, ());
             let _ = window.hide();
         }
@@ -183,6 +193,11 @@ pub fn run() {
             commands::apps::search_files,
             commands::apps::get_icons,
             commands::apps::open_path,
+            commands::actions::reveal_path,
+            commands::actions::open_with,
+            commands::actions::run_as_admin,
+            commands::actions::read_clipboard_text,
+            commands::actions::get_selected_text,
             commands::browsers::list_browsers,
             commands::browsers::open_url,
             commands::drives::list_drives,
@@ -198,6 +213,9 @@ pub fn run() {
             commands::plugins::stop_plugin,
             commands::plugins::plugins_dir,
             commands::plugins::search_plugin,
+            commands::preview::preview_file,
+            commands::windows::list_windows,
+            commands::windows::control_window,
             commands::clipboard::list_clipboard,
             commands::clipboard::copy_clipboard,
             commands::clipboard::toggle_clipboard_pin,

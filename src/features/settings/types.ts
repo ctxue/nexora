@@ -21,6 +21,7 @@ export interface Settings {
   fileSearch: boolean;
   clipboardHistory: boolean;
   launchAtStartup: boolean;
+  launcherAnimation: boolean;
   windowMode: WindowMode;
   fontFamily: FontFamily;
   theme: ThemeMode;

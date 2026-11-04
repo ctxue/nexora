@@ -1,11 +1,18 @@
 import { X } from "lucide-react";
-import type { RefObject } from "react";
+import {
+  startTransition,
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 
 import type { CommandIcon } from "../core/types";
+import { shouldSyncSearchInput } from "../features/launcher/searchInput";
 import { useI18n } from "../i18n";
 import { BrandMark } from "./BrandMark";
 import { CommandGlyphIcon } from "./CommandGlyph";
-import { SearchCaret } from "./SearchCaret";
 
 interface SearchBarProps {
   value: string;
@@ -14,6 +21,7 @@ interface SearchBarProps {
   onChange: (value: string) => void;
   onClear: () => void;
   onDragStart: () => void;
+  onActivateScope?: (value: string) => boolean;
   /** Active command scope: the typed keyword became a chip. */
   scope?: { title: string; keyword: string; icon: CommandIcon } | null;
   onClearScope?: () => void;
@@ -26,10 +34,53 @@ export function SearchBar({
   onChange,
   onClear,
   onDragStart,
+  onActivateScope,
   scope = null,
   onClearScope,
 }: SearchBarProps) {
   const { t } = useI18n();
+  const [hasDraft, setHasDraft] = useState(Boolean(value));
+  const draft = useRef(value);
+  const composing = useRef(false);
+  const scopeKey = scope?.keyword ?? null;
+  const previousScopeKey = useRef(scopeKey);
+
+  const resetCaret = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      const input = inputRef.current;
+      if (!input) return;
+      input.focus({ preventScroll: true });
+      input.setSelectionRange(0, 0);
+    });
+  }, [inputRef]);
+
+  useLayoutEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    const scopeChanged = previousScopeKey.current !== scopeKey;
+    previousScopeKey.current = scopeKey;
+    const inputFocused = document.activeElement === input;
+    if (
+      shouldSyncSearchInput({
+        externalValue: value,
+        currentValue: input.value,
+        scopeChanged,
+        inputFocused,
+      })
+    ) {
+      input.value = value;
+      draft.current = value;
+      setHasDraft(Boolean(value));
+      if (scopeChanged) resetCaret();
+    }
+  }, [inputRef, resetCaret, scopeKey, value]);
+
+  const clearDraft = useCallback(() => {
+    const input = inputRef.current;
+    if (input) input.value = "";
+    draft.current = "";
+    setHasDraft(false);
+  }, [inputRef]);
 
   return (
     <div
@@ -59,21 +110,57 @@ export function SearchBar({
       </span>
 
       {scope ? (
-        <span className="search-scope" title={t("search.clearScope")}>
+        <button
+          type="button"
+          className="search-scope"
+          title={t("search.clearScope")}
+          aria-label={`${t("search.removeScope")}: ${scope.title}`}
+          onClick={() => {
+            clearDraft();
+            onClearScope?.();
+            resetCaret();
+          }}
+        >
           <CommandGlyphIcon icon={scope.icon} size={13} strokeWidth={1.9} />
           <span className="search-scope-label">{scope.title}</span>
-        </span>
+        </button>
       ) : null}
 
       <input
         ref={inputRef}
         className="search-input"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
+        defaultValue={value}
+        onChange={(event) => {
+          const next = event.currentTarget.value;
+          draft.current = next;
+          setHasDraft(next.length > 0);
+          if (!composing.current) {
+            startTransition(() => onChange(next));
+          }
+        }}
+        onCompositionStart={() => {
+          composing.current = true;
+        }}
+        onCompositionEnd={(event) => {
+          composing.current = false;
+          const next = event.currentTarget.value;
+          draft.current = next;
+          setHasDraft(next.length > 0);
+          startTransition(() => onChange(next));
+        }}
         onKeyDown={(event) => {
-          if (scope && event.key === "Backspace" && value === "") {
+          if (event.key === "Tab" && !event.shiftKey) {
             event.preventDefault();
+            if (!scope && onActivateScope?.(draft.current)) {
+              clearDraft();
+            }
+            return;
+          }
+          if (scope && event.key === "Backspace" && draft.current === "") {
+            event.preventDefault();
+            clearDraft();
             onClearScope?.();
+            resetCaret();
           }
         }}
         placeholder={
@@ -92,13 +179,15 @@ export function SearchBar({
         autoFocus
       />
 
-      <SearchCaret inputRef={inputRef} />
-
-      {value ? (
+      {hasDraft ? (
         <button
           type="button"
           className="clear-button"
-          onClick={onClear}
+          onClick={() => {
+            clearDraft();
+            onClear();
+            resetCaret();
+          }}
           aria-label={t("search.clear")}
         >
           <X size={14} strokeWidth={2} />
