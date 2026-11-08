@@ -12,6 +12,8 @@
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-08
+
 - 工作区重构：启动器迁入 `apps/nexora-launcher`，加入根级多产品调试与打包编排。
 - 发布文件统一为 `NEXORA_LAUNCHER_<版本>_x64_setup.exe` 与 `NEXORA_LAUNCHER_<版本>_portable.zip`。
 

@@ -60,6 +60,16 @@ jobs:
             throw "Unexpected release file name."
           }
 
+      - name: Generate SHA-256 checksums
+        shell: pwsh
+        run: |
+          $files = @(Get-ChildItem -LiteralPath release -File | Sort-Object Name)
+          $lines = foreach ($file in $files) {
+            $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($file.Name)"
+          }
+          Set-Content -LiteralPath release/SHA256SUMS.txt -Value $lines -Encoding ascii
+
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
