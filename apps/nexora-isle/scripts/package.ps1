@@ -39,6 +39,7 @@ try {
     $packageName = "NEXORA_ISLE_${version}_windows_x64"
     if (-not $OutputDirectory) { $OutputDirectory = Join-Path $projectRoot 'dist' }
     $outputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
+    New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
     $stagingRoot = Join-Path ([IO.Path]::GetTempPath()) ('nexora-isle-package-' + [guid]::NewGuid().ToString('N'))
     $stagingDirectory = Join-Path $stagingRoot $packageName
     New-Item -ItemType Directory -Path $stagingDirectory -Force | Out-Null
