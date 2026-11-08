@@ -15,7 +15,8 @@
       <sub><b>NEXORA</b> · 应用、文件与命令启动器</sub>
     </td>
     <td width="45%" align="center">
-      <img src="docs/images/nexora-isle.png" alt="NEXORA ISLE 岛屿" width="390"><br>
+      <img src="docs/images/岛屿图片-16-35-4d07a6e1.png" alt="NEXORA ISLE 岛屿" width="390"><br>
+      <img src="docs/images/Snipaste_2026-11-08_16-36-52.png" alt="NEXORA ISLE 岛屿" width="390"><br>
       <sub><b>NEXORA ISLE · 岛屿</b> · 桌面信息岛屿</sub>
     </td>
   </tr>
