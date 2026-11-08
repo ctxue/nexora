@@ -1,9 +1,11 @@
-name: Release
+name: NEXORA Combined Release
 
 on:
   push:
     tags:
       - "v*"
+      - "release-v*"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -26,6 +28,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -33,43 +36,28 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run frontend tests
-        run: pnpm test
+      - name: Run workspace workflow tests
+        run: pnpm test:workspace
 
-      - name: Test release workflow
-        run: pnpm test:scripts
+      - name: Run launcher tests
+        run: pnpm test:launcher
 
-      - name: Validate release version
-        shell: pwsh
-        run: |
-          $version = $env:GITHUB_REF_NAME.TrimStart("v")
-          ./scripts/build-release.ps1 -ValidateOnly -ExpectedVersion $version
-
-      - name: Check Rust formatting
-        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
-
-      - name: Lint Rust
-        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-
-      - name: Run Rust tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Run Isle tests
+        run: pnpm test:isle
 
       - name: Build and package release
-        run: pnpm release:build
+        run: pnpm package:all
+
+      - name: Check legacy artifact names
+        run: pnpm check:workspace
 
       - name: Verify packaged files
         shell: pwsh
         run: |
-          $version = $env:GITHUB_REF_NAME.TrimStart("v")
-          $required = @(
-            "release/NEXORA_${version}_x64-setup.exe",
-            "release/NEXORA_${version}_portable.zip",
-            "release/SHA256SUMS.txt"
-          )
-          foreach ($path in $required) {
-            if (-not (Test-Path -LiteralPath $path)) {
-              throw "Missing release artifact: $path"
-            }
+          $files = @(Get-ChildItem -LiteralPath release -File)
+          if ($files.Count -ne 4) { throw "Expected four release files, found $($files.Count)." }
+          if (@($files | Where-Object { $_.Name -notmatch '^NEXORA_(LAUNCHER|ISLE)_.+_(x64_setup\.exe|portable\.zip)$' }).Count) {
+            throw "Unexpected release file name."
           }
 
       - name: Publish GitHub release
