@@ -1,5 +1,3 @@
-//! Safe, size-limited file previews exposed to the launcher.
-
 use std::{
     fs,
     io::Read,

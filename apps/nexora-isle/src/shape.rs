@@ -1,13 +1,6 @@
-//! 刘海面板轮廓：顶部向外翻的「肩」+ 竖直侧边 + 底部大圆角。
-//!
-//! 轮廓左右对称、自上而下单调，所以按行切成梯形条填充（可处理凹肩），
-//! 再沿外轮廓补一圈 1 物理像素的羽化带做抗锯齿——边缘不再有锯齿台阶。
-
 use crate::model::Dock;
 use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
 
-/// 左右停靠时，轮廓先在「贴顶」坐标系里生成：x 沿屏幕边缘（= 屏幕 y），
-/// y 是离开边缘的距离（0 = 贴边）；再映射回屏幕。顶部停靠为恒等映射。
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EdgeMap {
     dock: Dock,
@@ -19,7 +12,6 @@ impl EdgeMap {
         dock: Dock::Top,
         edge: 0.0,
     };
-    /// `rect` 为屏幕坐标里的岛体外接矩形，返回映射与对应的贴顶矩形。
     pub fn of(rect: Rect, dock: Dock) -> (EdgeMap, Rect) {
         match dock {
             Dock::Top => (Self::TOP, rect),
@@ -61,7 +53,6 @@ impl EdgeMap {
     }
 }
 
-/// 贴着 `dock` 边缘的轮廓（屏幕坐标）。
 pub fn outline_docked(rect: Rect, dock: Dock, flare: f32, flare_h: f32, radius: f32) -> Vec<Pos2> {
     let (map, frame) = EdgeMap::of(rect, dock);
     outline(frame, flare, flare_h, radius)
@@ -70,7 +61,6 @@ pub fn outline_docked(rect: Rect, dock: Dock, flare: f32, flare_h: f32, radius: 
         .collect()
 }
 
-/// 贴着 `dock` 边缘的抗锯齿填充。
 #[allow(clippy::too_many_arguments)]
 pub fn fill_docked(
     painter: &egui::Painter,
@@ -97,7 +87,6 @@ pub fn fill_docked(
     );
 }
 
-/// 贴着 `dock` 边缘的柔和落影。
 pub fn shadow_docked(
     painter: &egui::Painter,
     rect: Rect,
@@ -111,7 +100,6 @@ pub fn shadow_docked(
     shadow_mapped(painter, frame, map, flare, flare_h, radius, strength);
 }
 
-/// (y, 左 x, 右 x) 轮廓采样行。
 pub fn sections(rect: Rect, flare: f32, flare_h: f32, radius: f32) -> Vec<(f32, f32, f32)> {
     let (x0, y0, x1, y1) = (rect.left(), rect.top(), rect.right(), rect.bottom());
     let r = radius
@@ -123,7 +111,6 @@ pub fn sections(rect: Rect, flare: f32, flare_h: f32, radius: f32) -> Vec<(f32, 
     const N_FLARE: usize = 14;
     for i in 0..=N_FLARE {
         let t = i as f32 / N_FLARE as f32;
-        // 肩部曲线：(1-t)^2.4 比三次方更饱满，过渡更柔。
         let wing = flare * (1.0 - t).powf(2.4);
         rows.push((y0 + fh * t, x0 - wing, x1 + wing));
     }
@@ -142,7 +129,6 @@ pub fn sections(rect: Rect, flare: f32, flare_h: f32, radius: f32) -> Vec<(f32, 
     rows
 }
 
-/// 闭合外轮廓（顺时针：右侧自上而下，再左侧自下而上）。
 pub fn outline(rect: Rect, flare: f32, flare_h: f32, radius: f32) -> Vec<Pos2> {
     let rows = sections(rect, flare, flare_h, radius);
     rows.iter()
@@ -151,7 +137,6 @@ pub fn outline(rect: Rect, flare: f32, flare_h: f32, radius: f32) -> Vec<Pos2> {
         .collect()
 }
 
-// 顶边不参与羽化；端点只取肩部切线，避免整条顶边扭曲法线。
 fn edge_normal(pts: &[Pos2], i: usize) -> Vec2 {
     let normal = |a: Pos2, b: Pos2| {
         let d = (b - a).normalized();
@@ -165,11 +150,9 @@ fn edge_normal(pts: &[Pos2], i: usize) -> Vec2 {
     }
     let prev = normal(pts[i - 1], pts[i]);
     let next = normal(pts[i], pts[i + 1]);
-    // 相邻单位法线的交点补偿，保持两段的垂直羽化宽度一致。
     (prev + next) / (1.0 + prev.dot(next))
 }
 
-/// 抗锯齿填充。`feather` 是羽化宽度（逻辑点，通常 = 1 / ppp）。
 pub fn fill(
     painter: &egui::Painter,
     rect: Rect,
@@ -262,7 +245,6 @@ impl egui::cache::ComputerMut<FillKey, std::sync::Arc<egui::Mesh>> for FillCompu
     }
 }
 
-/// 预乘颜色的线性插值。
 fn lerp_color(a: Color32, b: Color32, t: f32) -> Color32 {
     let t = t.clamp(0.0, 1.0);
     let ch = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round() as u8;
@@ -274,7 +256,6 @@ fn lerp_color(a: Color32, b: Color32, t: f32) -> Color32 {
     )
 }
 
-// 仅保留当前帧仍使用的轮廓；尺寸、透明度或 DPI 改变时重新生成，动画不复用旧形状。
 #[cfg(test)]
 fn fill_mesh(
     rect: Rect,
@@ -309,7 +290,6 @@ fn gradient_mesh(
     let mut mesh = egui::Mesh::default();
     mesh.vertices.reserve((rows.len() * 3 - 2) * 4);
     mesh.indices.reserve((rows.len() * 3 - 2) * 6);
-    // 1) 实心梯形条
     for w in rows.windows(2) {
         let (ya, la, ra) = w[0];
         let (yb, lb, rb) = w[1];
@@ -321,7 +301,6 @@ fn gradient_mesh(
         mesh.add_triangle(i, i + 1, i + 2);
         mesh.add_triangle(i, i + 2, i + 3);
     }
-    // 2) 外轮廓羽化带（不含顶边：贴着屏幕顶）
     let pts: Vec<Pos2> = rows
         .iter()
         .map(|&(y, _, r)| Pos2::new(r, y))
@@ -331,7 +310,6 @@ fn gradient_mesh(
     let clear = Color32::TRANSPARENT;
     for i in 0..n - 1 {
         let (a, b) = (pts[i], pts[i + 1]);
-        // 顶边两端（右上角 → 左上角那条闭合边）不羽化
         if a.y <= rect.top() + 0.01 && b.y <= rect.top() + 0.01 {
             continue;
         }
@@ -347,7 +325,6 @@ fn gradient_mesh(
     mesh
 }
 
-/// 柔和的落影：多层半透明轮廓叠加，近似高斯模糊（不依赖 GPU 模糊）。
 pub fn shadow(
     painter: &egui::Painter,
     rect: Rect,
@@ -453,7 +430,6 @@ mod tests {
         assert!(pts.iter().any(|p| p.x < rect.left() - 17.0));
         assert!(inside(&pts, Pos2::new(rect.left() + 0.2, 70.0)));
         assert!(!inside(&pts, Pos2::new(rect.left() - 0.5, 70.0)));
-        // 底部圆角外侧是空的
         assert!(!inside(
             &pts,
             Pos2::new(rect.left() + 2.0, rect.bottom() - 2.0)
@@ -477,7 +453,6 @@ mod dock_tests {
             b.top() < 100.0 - 17.0 && b.bottom() > 240.0 + 17.0,
             "肩部沿屏幕边缘上下展开：{b:?}"
         );
-        // 肩部只在贴边处
         assert!(left.iter().filter(|p| p.y < 99.0).all(|p| p.x < 16.5));
         let right_rect = Rect::from_min_size(Pos2::new(81.0, 100.0), Vec2::new(419.0, 140.0));
         let right = outline_docked(right_rect, Dock::Right, 17.6, 16.0, 33.0);

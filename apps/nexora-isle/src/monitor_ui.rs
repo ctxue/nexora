@@ -1,5 +1,3 @@
-//! Reference-led compact system dashboard.
-
 use crate::app::{App, Cmd, Env, CONTENT_LEFT, CONTENT_WIDTH};
 use crate::lucide::{self, Icon};
 use crate::monitor::{GroupUsage, Metric};

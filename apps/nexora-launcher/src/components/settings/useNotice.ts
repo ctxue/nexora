@@ -1,9 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-/**
- * Transient status message shown as a toast (export finished, settings
- * imported, …). Auto-hides after a few seconds.
- */
 export function useNotice() {
   const [notice, setNotice] = useState<string | null>(null);
   const timer = useRef<number | null>(null);

@@ -5,10 +5,6 @@ interface SearchInputSyncState {
   inputFocused: boolean;
 }
 
-/**
- * The input owns its text while focused. Parent search updates must never
- * rewrite the DOM value in the middle of typing.
- */
 export function shouldSyncSearchInput({
   externalValue,
   currentValue,

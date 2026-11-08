@@ -1,5 +1,3 @@
-//! Showing, hiding, and toggling the launcher window.
-
 use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
@@ -14,8 +12,6 @@ use crate::{
     state::LauncherState,
 };
 
-/// Replaces the executable icon (the window is borderless, so this is the only
-/// place the taskbar/alt-tab icon comes from).
 pub fn apply_window_icon(window: &WebviewWindow) {
     if let Ok(icon) = tauri::image::Image::from_bytes(include_bytes!("../../icons/128x128.png")) {
         let _ = window.set_icon(icon);
@@ -40,8 +36,6 @@ pub fn show_launcher(app: &AppHandle) {
         }
     }
 
-    // Put the caret in the search field before the window becomes active, so
-    // the first keystrokes already have an editable target.
     let _ = window.eval(
         "document.querySelector('.search-input')?.focus({ preventScroll: true }); window.focus()",
     );
@@ -52,8 +46,6 @@ pub fn show_launcher(app: &AppHandle) {
     focus_launcher(&window);
     let _ = window.emit(EVENT_LAUNCHER_SHOWN, ());
 
-    // WebView2 needs a moment before it accepts input. Re-focus it, then replay
-    // everything typed during that gap so no character is lost.
     let window = window.clone();
     std::thread::spawn(move || {
         std::thread::sleep(FOCUS_RETRY_INTERVAL * 2);
@@ -80,9 +72,6 @@ pub fn hide_launcher(app: &AppHandle) {
         keys.clear();
     }
 
-    // Let React clear the previous query while the window is still hidden. On
-    // the next show the panel already has its final height, so there is no
-    // visible 0 -> content-height collapse.
     let _ = window.emit(EVENT_LAUNCHER_HIDDEN, ());
     let _ = window.hide();
 }
@@ -112,7 +101,6 @@ pub fn toggle_launcher(app: &AppHandle) {
     }
 }
 
-/// Keeps `LauncherState::dragging` in sync with the physical left button.
 pub fn watch_drag_release(app: AppHandle) {
     std::thread::spawn(move || {
         let started = Instant::now();

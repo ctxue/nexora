@@ -1,25 +1,18 @@
 import type { CommandIcon } from "./types";
 
-/** What a custom command does when it runs. */
 export type CommandKind = "web-search" | "open-url" | "open-path" | "launch";
 
-/** The payload of a command. Unused fields stay empty so storage stays flat. */
 export interface CommandAction {
   kind: CommandKind;
-  /** `web-search`: URL template containing `{query}`. */
   template: string;
-  /** `open-url` URL, `open-path` path, or `launch` program. */
   target: string;
-  /** `launch`: raw argument template, may contain `{query}`. */
   args: string;
-  /** Browser executable, or `"default"`. */
   browser: string;
   newWindow: boolean;
 }
 
 export interface CustomCommand {
   id: string;
-  /** Trigger word typed in the launcher, lower case, no spaces. */
   keyword: string;
   title: string;
   subtitle: string;
@@ -38,7 +31,6 @@ export interface TemplateContext {
 
 export const COMMAND_LIMIT = 100;
 
-/** 1–16 characters, starts with a letter or digit. */
 export const KEYWORD_PATTERN = /^[a-z0-9][a-z0-9_-]{0,15}$/i;
 
 export const COMMAND_ICON_CHOICES: CommandIcon[] = [
@@ -76,7 +68,6 @@ function isHttpUrl(value: string): boolean {
   return trimmed.startsWith("http://") || trimmed.startsWith("https://");
 }
 
-/** Whether the command expects text after its keyword (`edge <query>`). */
 export function acceptsArgument(command: CustomCommand): boolean {
   if (command.action.kind === "web-search") return true;
   return (
@@ -85,7 +76,6 @@ export function acceptsArgument(command: CustomCommand): boolean {
   );
 }
 
-/** Finds an enabled argument-taking command by its exact keyword. */
 export function findArgumentCommand(
   keyword: string,
   commands: CustomCommand[],
@@ -127,7 +117,6 @@ function fillTemplate(
   );
 }
 
-/** Replaces supported placeholders in a URL template. */
 export function buildUrl(
   template: string,
   argument: string,
@@ -140,15 +129,12 @@ export function buildUrl(
   );
 }
 
-/** Quotes one argument for the Windows command line. */
 export function quoteWindowsArgument(value: string): string {
   if (value.length > 0 && !/[\s"]/u.test(value)) return value;
-  // Escape runs of backslashes that precede a quote, then double trailing ones.
   const escaped = value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, "$1$1");
   return `"${escaped}"`;
 }
 
-/** Fills a raw argument template, quoting each substituted value. */
 export function buildArguments(
   template: string,
   argument: string,
@@ -159,7 +145,6 @@ export function buildArguments(
   );
 }
 
-/** Fills a file, folder, or URL target without command-line quoting. */
 export function buildTarget(
   template: string,
   argument: string,
@@ -191,7 +176,6 @@ function normalizeAction(value: unknown): CommandAction {
   };
 }
 
-/** Coerces stored or imported data into a safe command list. */
 export function normalizeCommands(value: unknown): CustomCommand[] {
   if (!Array.isArray(value)) return [];
 
@@ -240,7 +224,6 @@ export function normalizeCommands(value: unknown): CustomCommand[] {
   return commands;
 }
 
-/** A blank command for the settings editor. */
 export function createCommand(): CustomCommand {
   const now = Date.now();
   return {
@@ -263,7 +246,6 @@ export function createCommand(): CustomCommand {
   };
 }
 
-/** Returns the first problem with a draft, or `null` when it can be saved. */
 export function validateCommand(
   command: CustomCommand,
   all: CustomCommand[],
@@ -296,10 +278,6 @@ export interface ParsedQuery {
   argument: string;
 }
 
-/**
- * Splits `edge some words` into the command that owns `edge` and the argument.
- * Only commands that accept an argument can become a scope.
- */
 export function parseQuery(
   raw: string,
   commands: CustomCommand[],
@@ -314,7 +292,6 @@ export function parseQuery(
     : { scope: null, argument: raw };
 }
 
-/** Ranks commands shown in normal (unscoped) search results. */
 export function scoreCustomCommand(
   command: CustomCommand,
   rawQuery: string,
@@ -340,7 +317,6 @@ export function scoreCustomCommand(
   return 0;
 }
 
-/** Host shown under a command item ("cn.bing.com"). */
 export function commandHost(command: CustomCommand): string {
   const candidate =
     command.action.kind === "web-search"
@@ -365,7 +341,6 @@ export interface CommandPreset {
   icon: CommandIcon;
 }
 
-/** Ready-made searches offered in the settings page. */
 export const COMMAND_PRESETS: CommandPreset[] = [
   {
     id: "bing",
@@ -409,7 +384,6 @@ export const COMMAND_PRESETS: CommandPreset[] = [
   },
 ];
 
-/** Builds a command from a preset, using the default browser. */
 export function commandFromPreset(preset: CommandPreset): CustomCommand {
   const now = Date.now();
   return {

@@ -1,4 +1,8 @@
-//! Windows 状态采样与经用户授权的通知读取。
+//! Windows system observations and user-authorized notification access.
+//!
+//! Sampling is local-only. Notification text is exposed to the UI only after
+//! Windows grants access and the user enables the corresponding display option.
+
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::mpsc::{self, Receiver};
@@ -41,7 +45,6 @@ pub struct Observation {
     pub fullscreen: Option<crate::display_layout::Bounds>,
 }
 
-/// 跨进程输入法查询和 COM 状态采样留在后台，只在状态改变时唤醒界面。
 pub fn observe(
     ctx: eframe::egui::Context,
     initial: Snapshot,
@@ -218,7 +221,6 @@ unsafe fn audio_device() -> Result<IMMDevice> {
             let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
         }
     });
-    // 每个采样线程复用枚举器，但每次仍查询当前默认设备，保留热插拔响应。
     thread_local! {static ENUMERATOR:std::cell::RefCell<Option<IMMDeviceEnumerator>>=const{std::cell::RefCell::new(None)};}
     ENUMERATOR.with(|slot| {
         let mut slot = slot.borrow_mut();
@@ -238,7 +240,6 @@ unsafe fn audio_device() -> Result<IMMDevice> {
 unsafe fn audio() -> Result<IAudioEndpointVolume> {
     audio_device()?.Activate(CLSCTX_ALL, None)
 }
-/// 设置主音量（0..100）；同时解除静音，拖动音量条时立刻能听到。
 #[cfg(windows)]
 pub fn set_volume(percent: u32) {
     unsafe {
@@ -250,7 +251,6 @@ pub fn set_volume(percent: u32) {
     }
 }
 
-/// 切换静音，返回切换后的静音状态（拿不到设备时返回 None）。
 #[cfg(windows)]
 pub fn toggle_mute() -> Option<bool> {
     unsafe {
@@ -272,7 +272,6 @@ pub fn fullscreen() -> Option<crate::display_layout::Bounds> {
         if pid == windows::Win32::System::Threading::GetCurrentProcessId() {
             return None;
         }
-        // 桌面与资源管理器桌面窗口不能当成全屏游戏。
         let mut cls = [0u16; 64];
         let n = GetClassNameW(hwnd, &mut cls);
         let cls = String::from_utf16_lossy(&cls[..n.max(0) as usize]);
@@ -332,7 +331,6 @@ fn browser_overlaps_island(browser: RECT, island: RECT, dock: crate::model::Dock
     if dock.is_side() {
         return window_covers_side(browser, island, dock);
     }
-    // 窗口是 CANVAS_W 宽的透明画布，岛体中心固定在画布左侧 WIN_W/2 处（与水平位置、大小无关）。
     let scale = (island.right - island.left) as f32 / crate::app::CANVAS_W;
     let center = island.left as f32 + crate::app::WIN_W * scale / 2.0;
     let half = crate::app::PW * scale / 2.0;
@@ -342,8 +340,6 @@ fn browser_overlaps_island(browser: RECT, island: RECT, dock: crate::model::Dock
         && browser.bottom > island.top
 }
 
-/// 左右停靠：画布是 SIDE_W × SIDE_H，岛体贴在画布的左 / 右边、竖直居中。
-/// 前台窗口盖住岛所在的那一段屏幕边缘（例如最大化、全屏或贴边摆放）即视为遮挡。
 fn window_covers_side(window: RECT, island: RECT, dock: crate::model::Dock) -> bool {
     let scale = (island.right - island.left) as f32 / crate::side_dock::SIDE_W;
     let cy = island.top as f32 + crate::side_dock::SIDE_H * scale / 2.0;
@@ -366,7 +362,6 @@ pub fn browser_at_top(island: HWND, settings: &crate::model::Settings) -> Option
         }
         let mut pid = 0;
         GetWindowThreadProcessId(foreground, Some(&mut pid));
-        // 设置、托盘和岛内输入沿用此前的避让状态，避免自身窗口引起反复切换。
         if pid == 0 || pid == GetCurrentProcessId() {
             return None;
         }
@@ -464,7 +459,6 @@ fn is_wechat_toast(app: &str, id: &str) -> bool {
             .iter()
             .any(|name| id.eq_ignore_ascii_case(name))
 }
-/// 停止信号独立于消息队列，断开后结束等待，不再读取通知。
 pub struct Notifications {
     incoming: Receiver<Incoming>,
     stop: mpsc::Sender<()>,
@@ -516,7 +510,6 @@ impl NotificationBaseline {
     }
 }
 
-/// 必须由窗口线程发起权限请求，后台仅读取新增或更新的通知。
 pub fn connect(ctx: eframe::egui::Context) -> Result<Notifications> {
     let listener = UserNotificationListener::Current()?;
     let request = listener.RequestAccessAsync()?;
@@ -588,13 +581,11 @@ pub fn connect(ctx: eframe::egui::Context) -> Result<Notifications> {
                             .and_then(|old| old.get(&number))
                             .is_some_and(|old| old.created == created && old.qq_body.is_some());
                         let (app, id) = notification_identity(&n, number, created, known_qq);
-                        // 微信只走任务栏事件，即使客户端同时发送系统通知也不读取其正文。
                         if is_wechat_toast(&app, &id) {
                             current.insert(number, ToastVersion::new(created, None));
                             continue;
                         }
                         let qq = id == "QQ";
-                        // QQ 可能原地更新同一条通知；其他应用的启动历史不需要读取正文。
                         let body = if qq || baseline.previous.is_some() {
                             notification_body(&n).unwrap_or_default()
                         } else {
@@ -682,6 +673,61 @@ pub fn pick_files_for(
         }
         Ok(out)
     }
+}
+
+pub fn save_png_as(
+    title: &str,
+    suggested_name: &str,
+    owner: Option<HWND>,
+    bytes: &[u8],
+) -> Result<Option<std::path::PathBuf>> {
+    unsafe {
+        use windows::Win32::UI::Shell::*;
+        let dialog: IFileSaveDialog = CoCreateInstance(&FileSaveDialog, None, CLSCTX_ALL)?;
+        dialog.SetOptions(FOS_FORCEFILESYSTEM | FOS_OVERWRITEPROMPT)?;
+        dialog.SetTitle(&HSTRING::from(title))?;
+        dialog.SetFileName(&HSTRING::from(suggested_name))?;
+        dialog.SetDefaultExtension(&HSTRING::from("png"))?;
+        let filter = [windows::Win32::UI::Shell::Common::COMDLG_FILTERSPEC {
+            pszName: windows::core::w!("PNG image"),
+            pszSpec: windows::core::w!("*.png"),
+        }];
+        dialog.SetFileTypes(&filter)?;
+        let mut centering = NativeDialogCenter::start(owner);
+        let shown = dialog.Show(owner.as_ref());
+        centering.finish();
+        if let Err(error) = shown {
+            if error.code().0 as u32 == 0x800704c7 {
+                return Ok(None);
+            }
+            return Err(error);
+        }
+        let item = dialog.GetResult()?;
+        let ptr = item.GetDisplayName(SIGDN_FILESYSPATH)?;
+        let selected = ptr.to_string()?;
+        windows::Win32::System::Com::CoTaskMemFree(Some(ptr.0 as _));
+        let path = png_save_path(selected.into());
+        save_png_file(&path, bytes).map_err(|message| {
+            windows::core::Error::new(windows::Win32::Foundation::E_FAIL, message)
+        })?;
+        Ok(Some(path))
+    }
+}
+
+fn png_save_path(mut path: std::path::PathBuf) -> std::path::PathBuf {
+    if path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_none_or(|extension| !extension.eq_ignore_ascii_case("png"))
+    {
+        path.set_extension("png");
+    }
+    path
+}
+
+fn save_png_file(path: &std::path::Path, bytes: &[u8]) -> std::result::Result<(), String> {
+    crate::model::atomic_write(path, bytes)
+        .map_err(|error| format!("无法保存图片 {}：{error}", path.display()))
 }
 
 pub struct NativeDialogCenter {
@@ -807,7 +853,6 @@ fn centered_dialog_origin(work_area: [i32; 4], width: i32, height: i32) -> (i32,
     )
 }
 
-/// 构建资源管理器可识别的文件数据对象。
 fn file_data_object(path: &std::path::Path) -> Result<windows::Win32::System::Com::IDataObject> {
     unsafe {
         use windows::Win32::UI::Shell::*;
@@ -830,7 +875,6 @@ fn file_data_object(path: &std::path::Path) -> Result<windows::Win32::System::Co
         result
     }
 }
-/// 原生拖出只允许复制，取消拖放不会改变文件口袋与原文件。
 pub fn drag_file(path: &std::path::Path) -> Result<()> {
     unsafe {
         use windows::Win32::System::Ole::{OleInitialize, OleUninitialize, DROPEFFECT_COPY};
@@ -875,6 +919,37 @@ mod tests {
         );
         assert_eq!(centered_dialog_origin([0, 0, 640, 480], 800, 600), (0, 0));
     }
+
+    #[test]
+    fn png_save_path_adds_the_missing_png_extension() {
+        assert_eq!(
+            png_save_path(std::path::PathBuf::from(r"C:\Pictures\岛屿图片")),
+            std::path::PathBuf::from(r"C:\Pictures\岛屿图片.png")
+        );
+        assert_eq!(
+            png_save_path(std::path::PathBuf::from(r"C:\Pictures\岛屿图片.PNG")),
+            std::path::PathBuf::from(r"C:\Pictures\岛屿图片.PNG")
+        );
+    }
+
+    #[test]
+    fn png_save_writes_the_clipboard_bytes_without_reencoding() {
+        let directory = std::env::temp_dir().join(format!(
+            "nexora-isle-save-image-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("clipboard.png");
+        let bytes = b"\x89PNG\r\n\x1a\nclipboard-image";
+        save_png_file(&path, bytes).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
     #[test]
     fn notifications_skip_history_but_detect_reused_ids_and_updated_content() {
         let mut baseline = NotificationBaseline::default();
@@ -1001,7 +1076,6 @@ mod tests {
     #[test]
     fn side_dock_avoidance_checks_the_covered_screen_edge() {
         use crate::model::Dock;
-        // 1920×1080 屏幕，100% 缩放：左侧画布 0..500，竖直居中（240..840），岛体中心 y=540。
         let left = RECT {
             left: 0,
             top: 240,
@@ -1303,8 +1377,10 @@ mod avoidance_tests {
     use super::*;
     #[test]
     fn avoidance_respects_master_browser_switch_and_custom_app_identity() {
-        let mut settings = crate::model::Settings::default();
-        settings.avoid_apps = vec![(r"D:\Apps\Editor.exe".into(), "编辑器".into())];
+        let mut settings = crate::model::Settings {
+            avoid_apps: vec![(r"D:\Apps\Editor.exe".into(), "编辑器".into())],
+            ..Default::default()
+        };
         assert!(!avoidance_matches(r"D:\Apps\Editor.exe", &settings));
         settings.browser_minimal = true;
         assert!(avoidance_matches(r"D:\Quark\quark.exe", &settings));

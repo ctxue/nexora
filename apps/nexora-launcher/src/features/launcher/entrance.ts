@@ -37,10 +37,6 @@ const STATIC_MOTION = {
   },
 } as const;
 
-/**
- * Animate the card's width rather than its transform so the original springy
- * reveal is preserved without stretching the search text.
- */
 export function launcherCardMotionFor(
   event: "hidden",
   animationEnabled?: true,

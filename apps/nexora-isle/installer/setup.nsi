@@ -1,4 +1,4 @@
-﻿; -*- coding: utf-8 -*-
+; -*- coding: utf-8 -*-
 Unicode true
 !include "MUI2.nsh"
 !include "config.nsh"
@@ -26,16 +26,16 @@ Var AutoStartChoice
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
-!define MUI_FINISHPAGE_TITLE "NEXORA ISLE · 星屿 已安装"
+!define MUI_FINISHPAGE_TITLE "NEXORA ISLE · 岛屿 已安装"
 !define MUI_FINISHPAGE_TEXT "安装完成，可以从桌面或开始菜单打开。"
 !define MUI_FINISHPAGE_RUN "$INSTDIR\nexora-isle.exe"
 !define MUI_FINISHPAGE_RUN_TEXT "打开 NEXORA ISLE"
 !insertmacro MUI_PAGE_FINISH
-!define MUI_UNCONFIRMPAGE_TEXT_TOP "将卸载 NEXORA ISLE · 星屿。设置、文件口袋和连接记录会保留。"
+!define MUI_UNCONFIRMPAGE_TEXT_TOP "将卸载 NEXORA ISLE · 岛屿。设置、文件口袋和连接记录会保留。"
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "SimpChinese"
-BrandingText "NEXORA ISLE · 星屿"
+BrandingText "NEXORA ISLE · 岛屿"
 SetFont "Microsoft YaHei UI" 9
 
 Function .onInit

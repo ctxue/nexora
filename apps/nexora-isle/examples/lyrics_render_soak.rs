@@ -26,7 +26,7 @@ fn main() -> eframe::Result<()> {
             self.frame_at = std::time::Instant::now();
             let t = self.start.elapsed().as_secs_f64();
             self.frames += 1;
-            self.app.settings.island_lyrics = t >= 360.0 || (t * 2.0) as u64 % 2 == 0;
+            self.app.settings.island_lyrics = t >= 360.0 || ((t * 2.0) as u64).is_multiple_of(2);
             let env = Env {
                 t,
                 clock: "00:49:00".into(),

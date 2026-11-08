@@ -1,4 +1,8 @@
-//! 用户主动检查、下载并安装正式版更新。
+//! User-initiated release checks, verified downloads, and installer handoff.
+//!
+//! Update packages must match the published release metadata and are only
+//! installed after download verification and explicit user action.
+
 use eframe::egui;
 use std::{
     io::{Read, Write},
@@ -573,7 +577,6 @@ impl State {
     }
 }
 
-// Windows 的 GL 透明窗口可能仍显示黑底，按绘制轮廓裁掉窗口外沿。
 #[cfg(windows)]
 fn clip_update_window(rect: egui::Rect, scale: f32) {
     use windows::Win32::{
@@ -624,7 +627,6 @@ unsafe fn update_window_region(
 }
 
 fn update_agent(proxy: Option<&str>, timeout: Duration) -> Result<ureq::Agent, String> {
-    // 整体 timeout 会覆盖读取超时，分别限制连接和无数据等待。
     let mut builder = ureq::AgentBuilder::new()
         .try_proxy_from_env(false)
         .timeout_connect(Duration::from_secs(20))
@@ -831,7 +833,6 @@ fn launch_installer(work: &std::path::Path) -> Result<(), String> {
         .creation_flags(0x08000000)
         .spawn()
         .map_err(|_| "无法启动更新程序，请通过浏览器下载安装")?;
-    // 脚本先确认缓存和安装目录可用，再允许主程序退出。
     for _ in 0..100 {
         if work.join("ready").exists() {
             return Ok(());
@@ -925,7 +926,7 @@ mod tests {
                     stream
                         .set_read_timeout(Some(Duration::from_secs(1)))
                         .unwrap();
-                    stream.read(&mut [0; 4096]).unwrap();
+                    let _ = stream.read(&mut [0; 4096]).unwrap();
                     stream
                         .write_all(
                             b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n",

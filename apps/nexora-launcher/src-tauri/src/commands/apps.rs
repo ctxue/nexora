@@ -1,5 +1,3 @@
-//! Commands that feed the launcher: apps, quick paths, the file index, icons.
-
 use std::path::PathBuf;
 
 use tauri::{AppHandle, Emitter};

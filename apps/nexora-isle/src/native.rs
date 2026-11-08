@@ -1,13 +1,13 @@
-//! Windows 的非激活窗口、形状区域与命中测试。
+//! Windows host-window behavior for the island.
 //!
-//! Non-activating topmost window, shape region, hit testing, and foreground
-//! dismissal behavior.
+//! The island must remain non-activating, topmost, click-through outside its
+//! hit regions, and correctly shaped without stealing focus from the desktop.
 
 use crate::poll_clock::PollClock;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     CombineRgn, CreatePolygonRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject, SetWindowRgn,
@@ -20,17 +20,10 @@ use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindow
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 const SUBCLASS_ID: usize = 0x4E45_5848; // "NEXH"
-#[allow(dead_code)]
-const WS_EX_NOREDIRECTIONBITMAP: isize = 0x0020_0000;
 
-/// 命中区（物理像素，窗口坐标，left/top/right/bottom）。
+#[allow(clippy::type_complexity)]
 static HIT: OnceLock<Mutex<Vec<(i32, i32, i32, i32)>>> = OnceLock::new();
-/// 前台窗口切到别的进程时置位，由主线程消费。
 static FG_CHANGED: AtomicBool = AtomicBool::new(false);
-
-// `WS_EX_NOREDIRECTIONBITMAP` 只能在 CreateWindowEx 时设置（运行时 SetWindowLongPtrW
-// 会回 ERROR_INVALID_PARAMETER），本项目用 GL 合成窗口，加上这一位后画面上什么都
-// 看不到，因此不使用；具体见 `apply_style` 注释与交付说明。
 
 fn hit() -> &'static Mutex<Vec<(i32, i32, i32, i32)>> {
     HIT.get_or_init(|| Mutex::new(Vec::new()))
@@ -84,19 +77,15 @@ impl DragCapture {
         let origin = *self.origin.get_or_insert(cursor);
         self.moved |=
             (cursor.0 - origin.0).abs() > threshold.0 || (cursor.1 - origin.1).abs() > threshold.1;
-        // 只接收从感应区外拖进来的文件：在岛下方的标签栏里按下（含连续点击、拖标签、选文字）
-        // 不能扩大窗口区域，否则 HTTRANSPARENT 拦不住跨进程点击，下层窗口会点不动。
         self.moved && !inside(origin) && inside(cursor)
     }
 }
 
-/// 拖文件进岛屿：拖放感应区只在每帧的 `update` 里检查，而岛屿静止时（没有表情动画、
-/// 没有播放音乐，例如侧边停靠）一秒才画一帧，拖到岛上往往来不及扩大接收区域。
-/// 这里用一个几乎不占资源的小线程：每 80 ms 看一次鼠标键，只有按住且光标在岛的画布内时
-/// 才请求重绘，让感应区及时生效；平时不触发任何绘制。
 fn watch_drag(hwnd: HWND, ctx: eframe::egui::Context) {
     let raw = hwnd.0 as isize;
     let mut was_down = false;
+    let mut was_inside = false;
+    let mut last_raise = Instant::now() - Duration::from_secs(1);
     let _ = std::thread::Builder::new()
         .name("nexora-isle-drag-watch".into())
         .spawn(move || loop {
@@ -108,31 +97,45 @@ fn watch_drag(hwnd: HWND, ctx: eframe::egui::Context) {
                 }
                 let down = GetAsyncKeyState(VK_LBUTTON.0 as i32) < 0
                     || GetAsyncKeyState(VK_RBUTTON.0 as i32) < 0;
-                // 松开后补一帧，让拖放状态及时复位；否则静止时一秒才画一帧，连续点击会沿用上次的按下位置。
                 if was_down && !down {
                     ctx.request_repaint();
                 }
                 was_down = down;
-                if !down {
-                    continue;
-                }
                 let mut cursor = POINT::default();
                 let mut rect = RECT::default();
                 if GetCursorPos(&mut cursor).is_err() || GetWindowRect(hwnd, &mut rect).is_err() {
                     continue;
                 }
-                if cursor.x >= rect.left
+                let local = (cursor.x - rect.left, cursor.y - rect.top);
+                let inside = cursor.x >= rect.left
                     && cursor.x < rect.right
                     && cursor.y >= rect.top
                     && cursor.y < rect.bottom
-                {
+                    && inside_hit(local.0, local.1);
+                if inside {
+                    if !was_inside || last_raise.elapsed() >= Duration::from_millis(250) {
+                        raise_topmost_hwnd(hwnd);
+                        last_raise = Instant::now();
+                    }
+                    if !was_inside {
+                        ctx.request_repaint();
+                    }
+                }
+                was_inside = inside;
+                if down {
                     ctx.request_repaint();
                 }
             }
         });
 }
 
-// 图形上下文和原生样式就绪后重新启用逐像素合成；不能只依赖创建 HWND 时的请求。
+fn raise_topmost_hwnd(hwnd: HWND) {
+    unsafe {
+        let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
+        let _ = SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags);
+    }
+}
+
 fn enable_alpha_composition(hwnd: HWND) -> windows::core::Result<()> {
     use windows::Win32::Graphics::Dwm::{
         DwmEnableBlurBehindWindow, DWM_BB_BLURREGION, DWM_BB_ENABLE, DWM_BLURBEHIND,
@@ -154,7 +157,6 @@ fn enable_alpha_composition(hwnd: HWND) -> windows::core::Result<()> {
     }
 }
 
-/// 把逻辑坐标的轮廓换算成物理像素，作为去重的键和区域的输入。
 fn shape_key(shapes: &[crate::app::WindowShape], ppp: f32) -> Vec<i32> {
     use crate::app::WindowShape;
     let px = |v: f32| (v * ppp).round() as i32;
@@ -185,7 +187,6 @@ fn shape_key(shapes: &[crate::app::WindowShape], ppp: f32) -> Vec<i32> {
     key
 }
 
-/// 按 `shape_key` 的结果合成窗口区域（多块轮廓取并集）。
 unsafe fn shape_region(key: &[i32]) -> Option<HRGN> {
     let mut out: Option<HRGN> = None;
     let mut i = 0;
@@ -225,7 +226,6 @@ unsafe fn shape_region(key: &[i32]) -> Option<HRGN> {
     out
 }
 
-/// 命中区外 `HTTRANSPARENT`（鼠标投给下层窗口），命中区内 `HTCLIENT`。
 unsafe extern "system" fn subclass(
     hwnd: HWND,
     msg: u32,
@@ -239,12 +239,10 @@ unsafe extern "system" fn subclass(
         WM_DWMCOMPOSITIONCHANGED | WM_DISPLAYCHANGE | WM_DWMCOLORIZATIONCOLORCHANGED
     ) || (msg == WM_SHOWWINDOW && wp.0 != 0)
     {
-        // 隐藏创建到首次显示、隐藏后恢复时也要恢复透明；等框架处理完窗口状态再应用。
         let result = DefSubclassProc(hwnd, msg, wp, lp);
         let _ = enable_alpha_composition(hwnd);
         return result;
     }
-    // 保留框架的焦点通知；lParam=-1 禁止系统在激活时重画透明窗口的顶边。
     if msg == WM_NCACTIVATE {
         return DefSubclassProc(hwnd, msg, wp, LPARAM(-1));
     }
@@ -287,18 +285,15 @@ unsafe extern "system" fn on_foreground(
     }
     let mut pid = 0u32;
     let _ = GetWindowThreadProcessId(hwnd, Some(&mut pid));
-    // 自己（含托盘窗口）拿到前台不算「切走」
     if pid != 0 && pid != GetCurrentProcessId() {
         FG_CHANGED.store(true, Ordering::Relaxed);
     }
 }
 
-/// 主线程每帧调用一次：这一帧是否发生了「前台切到别的程序」。
 pub fn take_foreground_change() -> bool {
     FG_CHANGED.swap(false, Ordering::Relaxed)
 }
 
-/// winit 会在显示/改属性时重写窗口样式，所以每帧按需兜一次底。
 unsafe fn apply_style(hwnd: HWND, editing: bool, raise: bool) {
     let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
     let want = (style | WS_POPUP.0 as isize)
@@ -310,13 +305,6 @@ unsafe fn apply_style(hwnd: HWND, editing: bool, raise: bool) {
         frame_changed = true;
     }
     let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-    // 冻结单要求 0x08200088（含 WS_EX_NOREDIRECTIONBITMAP）。该位只能在
-    // CreateWindowEx 时设置，运行时 SetWindowLongPtrW 会回 ERROR_INVALID_PARAMETER；
-    // 而给 GL/窗口渲染的 HWND 加上它之后画面完全不被合成（实测可见像素为 0）。
-    // 因此这里只保留可用的 TOPMOST|TOOLWINDOW|NOACTIVATE，去掉会露在任务栏的
-    // APPWINDOW；ACCEPTFILES（winit 默认）也去掉，拖放走的是 OLE RegisterDragDrop，
-    // 不依赖 WM_DROPFILES，这样 ex style 就是 0x08000088。
-    // 置顶由 SetWindowPos 管理，避免样式标记与实际窗口层级脱节。
     let mut want_ex = (ex | WS_EX_TOOLWINDOW.0 as isize)
         & !(WS_EX_APPWINDOW.0 as isize)
         & !(WS_EX_ACCEPTFILES.0 as isize);
@@ -330,10 +318,7 @@ unsafe fn apply_style(hwnd: HWND, editing: bool, raise: bool) {
     }
     let topmost = ex & WS_EX_TOPMOST.0 as isize != 0;
     if frame_changed || !topmost || raise {
-        // 只有真的 SetWindowPos(HWND_TOPMOST) 才会让 TOPMOST 位生效
-        // 每次展开重新抬高实际层级；标记存在时仍可能被别的窗口盖住。
         let mut flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
-        // 输入状态只切换激活权限，避免重画无边框窗口的非客户区。
         if frame_changed {
             flags |= SWP_FRAMECHANGED;
         }
@@ -348,7 +333,6 @@ pub struct Window {
     hook: HWINEVENTHOOK,
     browser_state: (Option<bool>, PollClock),
     drag_capture: DragCapture,
-    /// Current shape-region key in physical pixels.
     shape: Option<Vec<i32>>,
     opaque_surface: bool,
 }
@@ -377,8 +361,6 @@ impl Window {
                 WINEVENT_OUTOFCONTEXT,
             )
         };
-        // 区域用哨兵值：首帧（包括启动即隐藏的空区域）也必须真正调用 SetWindowRgn，
-        // 否则整块透明画布会挡住下层程序的点击。
         let opaque_surface = cc
             .wgpu_render_state
             .as_ref()
@@ -396,8 +378,6 @@ impl Window {
         })
     }
 
-    /// 使用目标屏幕的物理坐标定位，并在缩放、岛体大小、水平位置或屏幕连接变化后重新校正。
-    /// `scale` 是主窗口的实际像素比（系统 DPI × 岛体大小），画布按它同步调整物理尺寸。
     pub fn place_on_display(
         &self,
         scale: f32,
@@ -406,7 +386,6 @@ impl Window {
         dock: crate::model::Dock,
     ) -> bool {
         unsafe {
-            // 顶部：水平居中 + 水平偏移；左右：贴边 + 竖直偏移，画布换成竖向的大小。
             let origin = if dock.is_side() {
                 crate::display_layout::side_origin(
                     bounds,
@@ -462,14 +441,8 @@ impl Window {
         self.opaque_surface
     }
 
-    /// Reassert topmost placement without activating the island. A floating
-    /// preview can be covered by another topmost tool window after the island
-    /// has finished its opening transition.
     pub fn raise_topmost(&self) {
-        unsafe {
-            let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
-            let _ = SetWindowPos(self.hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags);
-        }
+        raise_topmost_hwnd(self.hwnd);
     }
 
     pub fn logical_origin(&self, scale: f32) -> Option<eframe::egui::Pos2> {
@@ -493,7 +466,7 @@ impl Window {
         self.browser_state.0
     }
 
-    /// 区域参数均为窗口内的逻辑坐标 (x, y, 宽, 高)。
+    #[allow(clippy::too_many_arguments)]
     pub fn update(
         &mut self,
         region: (f32, f32, f32, f32),
@@ -512,7 +485,6 @@ impl Window {
             px(region.0 + region.2),
             px(region.1 + region.3),
         );
-        // 仅在拖动进入感应区后扩大 OLE 接收区域，避免普通点击改变透明窗口裁剪。
         let button_down = unsafe {
             GetAsyncKeyState(VK_LBUTTON.0 as i32) < 0 || GetAsyncKeyState(VK_RBUTTON.0 as i32) < 0
         };
@@ -545,7 +517,6 @@ impl Window {
         }
         *hit().lock().unwrap_or_else(|e| e.into_inner()) = hits;
         let _ = capture;
-        // DX12 的普通窗口表面没有 alpha 合成，只有它需要按轮廓裁剪窗口区域。
         match shape.filter(|_| self.opaque_surface) {
             Some(shapes) => {
                 let key = shape_key(shapes, ppp);
@@ -554,7 +525,6 @@ impl Window {
                         if let Some(rgn) = shape_region(&key) {
                             if SetWindowRgn(self.hwnd, rgn, true) != 0 {
                                 self.shape = Some(key);
-                                // 回到矩形区域时必须重新设置。
                                 self.region = (i32::MIN, 0, 0, 0);
                             } else {
                                 let _ = DeleteObject(rgn);
@@ -593,9 +563,19 @@ impl Drop for Window {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, MutexGuard};
+
+    static HIT_STATE_LOCK: Mutex<()> = Mutex::new(());
+
+    fn hit_state_guard() -> MutexGuard<'static, ()> {
+        HIT_STATE_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 
     #[test]
     fn opaque_surface_clips_black_background_even_without_system_blur() {
+        let _guard = hit_state_guard();
         use windows::Win32::Graphics::Gdi::{GetWindowRgn, PtInRegion};
         unsafe {
             let hwnd = CreateWindowExW(
@@ -733,7 +713,6 @@ mod tests {
 
     #[test]
     fn drag_capture_ignores_repeated_clicks_below_the_island_without_an_observed_release() {
-        // 极简模式一秒才画一帧：两次点击之间可能没有一帧看到松开。
         let mut capture = DragCapture::default();
         let zone = Some((110, 0, 530, 120));
         assert!(!capture.update(true, Some((200, 60)), zone, (4, 4)));
@@ -776,6 +755,7 @@ mod tests {
 
     #[test]
     fn expanding_raises_the_island_without_activating_it() {
+        let _guard = hit_state_guard();
         struct TestWindow(HWND);
         impl Drop for TestWindow {
             fn drop(&mut self) {
@@ -795,7 +775,6 @@ mod tests {
             false
         }
         unsafe {
-            // 窗口在屏幕外可见，才能验证实际桌面层级；不激活，也不遮挡用户桌面。
             let create = || {
                 TestWindow(
                     CreateWindowExW(
@@ -833,6 +812,17 @@ mod tests {
                 shape: None,
                 opaque_surface: false,
             };
+            native.raise_topmost();
+            assert!(
+                above(island.0, cover.0),
+                "交互置顶守卫必须把岛体重新抬到其他 topmost 窗口上方"
+            );
+            assert_eq!(
+                GetForegroundWindow(),
+                foreground,
+                "重新置顶不能抢走输入焦点"
+            );
+            SetWindowPos(cover.0, HWND_TOPMOST, 0, 0, 0, 0, flags).unwrap();
             let update = |native: &mut Window, expanded| {
                 native.update(
                     (0.0, 0.0, 416.0, 140.0),
@@ -860,7 +850,6 @@ mod tests {
             assert!(above(cover.0, island.0), "展开后不能每帧与其他弹窗争抢层级");
             update(&mut native, false);
             assert!(above(cover.0, island.0), "收起时不抬高层级");
-            // 模拟只剩置顶标记、实际顺序落在普通窗口后面的情况。
             SetWindowPos(island.0, HWND_NOTOPMOST, 0, 0, 0, 0, flags).unwrap();
             SetWindowPos(cover.0, HWND_NOTOPMOST, 0, 0, 0, 0, flags).unwrap();
             SetWindowLongPtrW(
@@ -878,6 +867,7 @@ mod tests {
 
     #[test]
     fn file_drag_expands_region_only_when_capture_is_active() {
+        let _guard = hit_state_guard();
         let island = (230, 0, 410, 42);
         let zone = (110, 0, 530, 120);
         assert_eq!(
@@ -905,6 +895,7 @@ mod tests {
 
     #[test]
     fn file_capture_below_the_island_still_returns_click_through() {
+        let _guard = hit_state_guard();
         unsafe {
             let saved = std::mem::replace(
                 &mut *hit().lock().unwrap_or_else(|e| e.into_inner()),
@@ -951,6 +942,7 @@ mod tests {
 
     #[test]
     fn right_notice_keeps_empty_space_below_the_main_bar_click_through() {
+        let _guard = hit_state_guard();
         let saved = std::mem::replace(
             &mut *hit().lock().unwrap_or_else(|e| e.into_inner()),
             vec![(100, 0, 400, 30), (372, 0, 760, 96)],
@@ -1053,7 +1045,6 @@ mod tests {
         }
         unsafe {
             let mut count = 0u32;
-            // 与实际岛体一样，从已置顶窗口验证输入状态切换。
             let window = TestWindow(
                 CreateWindowExW(
                     WS_EX_NOACTIVATE | WS_EX_TOPMOST,

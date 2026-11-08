@@ -1,4 +1,3 @@
-//! 系统跳转不可用时，定位播放器自己的进度控件并向该窗口发送消息。
 use windows::Win32::UI::HiDpi::{
     SetThreadDpiAwarenessContext, DPI_AWARENESS_CONTEXT, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
 };
@@ -179,7 +178,6 @@ pub(super) fn seek(source: &str, position: f64, duration: f64) -> bool {
             let root = ui.ElementFromHandle(hwnd).ok()?;
             let bar = qq_bar(&ui, &root, duration)?;
             let target = hwnd;
-            // 坐标来自无障碍控件，不依赖窗口位置；不移动鼠标，也不激活播放器。
             let mut p = point(
                 bar.CurrentBoundingRectangle().ok()?,
                 position,

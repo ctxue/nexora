@@ -1,9 +1,8 @@
-//! NEXORA ISLE: a focused Windows desktop information island.
+//! NEXORA ISLE library surface.
 //!
-//! - `app` / `pages`：与平台无关的界面与动效（外壳与录制器共用）
-//! - `anim` / `paint` / `shape` / `theme`：弹簧、矢量绘制、面板轮廓、配色字体
-//! - `model` / `lyrics` / `smtc` / `icons`：数据、歌词、系统媒体、文件图标
-//! - `native` / `tray`：仅 Windows 的窗口区域、命中穿透与托盘
+//! The root crate owns the state machine, rendering, persistence, and Windows
+//! integration. `main` only supplies the native shell; tests and recording
+//! tools drive the same `App` surface without platform-specific entry points.
 
 pub mod anim;
 pub mod app;

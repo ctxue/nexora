@@ -1,5 +1,3 @@
-//! Launch-at-login toggle (delegated to the autostart plugin).
-
 use tauri::AppHandle;
 use tauri_plugin_autostart::ManagerExt as AutostartExt;
 

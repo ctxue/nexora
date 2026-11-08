@@ -1,5 +1,3 @@
-//! Installed-application and file scanning for the search index.
-
 mod search;
 
 use std::{
@@ -20,7 +18,6 @@ use crate::{
 
 pub use search::search_files;
 
-/// Start Menu roots (per-user and machine-wide).
 fn start_menu_roots() -> Vec<PathBuf> {
     let mut roots = Vec::new();
 
@@ -54,13 +51,10 @@ fn is_junk_shortcut(name: &str) -> bool {
         .any(|marker| name.contains(marker))
 }
 
-/// Scans Start Menu shortcuts plus the AppsFolder namespace (UWP/MSIX apps).
 pub fn scan_apps() -> Vec<AppEntry> {
     let mut apps = Vec::new();
     let mut seen = HashSet::new();
 
-    // AppsFolder is the modern Start-menu namespace. It includes UWP/MSIX
-    // apps such as Windows Terminal that do not have a .lnk shortcut.
     for (name, path) in apps::scan_apps_folder() {
         if name.starts_with('{') || is_junk_shortcut(&name) {
             continue;
@@ -115,9 +109,6 @@ pub fn scan_apps() -> Vec<AppEntry> {
 
             let key = name.to_lowercase();
             if !seen.insert(key) {
-                // Prefer a real .lnk for classic apps when AppsFolder exposes
-                // the same app through an AppID. .lnk launching is more
-                // reliable across installers.
                 if let Some(existing) = apps
                     .iter_mut()
                     .find(|app| app.name.eq_ignore_ascii_case(name))
@@ -162,7 +153,6 @@ fn is_ignored_extension(extension: &str) -> bool {
     IGNORED_EXTENSIONS.contains(&extension)
 }
 
-/// Walks the user folders and returns every file worth searching.
 pub fn scan_files() -> Vec<FileEntry> {
     let mut roots = Vec::new();
     for root in [

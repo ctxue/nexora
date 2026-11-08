@@ -14,7 +14,6 @@ const WINDOW_ACTIONS: ResultActionDescriptor[] = [
   { id: "close-window", label: "Close window", danger: true },
 ];
 
-/** Capability-driven actions keep result rendering independent of item variants. */
 export function buildResultActions(item: LauncherItem): ResultActionDescriptor[] {
   if (item.kind === "window" && item.windowId) {
     return WINDOW_ACTIONS;

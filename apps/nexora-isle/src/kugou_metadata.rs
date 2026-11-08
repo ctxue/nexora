@@ -1,4 +1,3 @@
-//! 系统会话缺少曲长时，只读酷狗本机的歌曲元数据。
 use std::{
     ffi::c_void,
     time::{Duration, Instant},
@@ -30,7 +29,6 @@ fn track(raw: &[u8], filename: &str) -> Option<(String, f64)> {
 
 fn scan(bytes: &[u8], filename: &str) -> Option<(String, f64)> {
     const MARKER: &[u8] = b"\"duration\":";
-    // 先按首字节快速定位（标准库对单字节查找有向量化实现），再比对完整标记。
     let mut from = 0;
     while let Some(found) = bytes[from..].iter().position(|&b| b == b'"') {
         let offset = from + found;
@@ -38,7 +36,6 @@ fn scan(bytes: &[u8], filename: &str) -> Option<(String, f64)> {
         if !bytes[offset..].starts_with(MARKER) {
             continue;
         }
-        // 只保留歌曲字段；不读取或记录周围的请求、账号或日志内容。
         let end = (offset + 8192).min(bytes.len());
         let mut raw = Vec::with_capacity(end - offset + 1);
         raw.push(b'{');
@@ -191,7 +188,6 @@ fn read(pid: u32, filename: &str) -> Option<(String, f64)> {
         {
             let size = (region.size - offset).min(1024 * 1024);
             let mut count = 0;
-            // 复用同一块缓冲，避免每 1 MiB 重新分配并清零。
             if bytes.len() < size {
                 bytes.resize(size, 0);
             }
@@ -219,23 +215,21 @@ fn read(pid: u32, filename: &str) -> Option<(String, f64)> {
     None
 }
 
-/// 同一首歌最多扫描这么多次；第 n 次失败后等待 RETRY[n] 再试，用完即放弃。
 const RETRY: [Duration; 3] = [
     Duration::from_secs(5),
     Duration::from_secs(30),
     Duration::MAX,
 ];
-/// 歌曲不变时，窗口标题最多每秒核对一次（读取其他进程的窗口标题是跨进程消息）。
 const WINDOW_RECHECK: Duration = Duration::from_secs(1);
 
 #[derive(Default)]
+#[allow(clippy::type_complexity)]
 pub struct Cache {
     key: Option<(u32, String)>,
     value: Option<(String, f64)>,
     checked: Option<Instant>,
     seen: Option<Instant>,
     failures: usize,
-    /// 上次窗口核对：用哪组标题/歌手、何时、结果。
     looked: Option<(String, String, Instant, Option<(u32, String)>)>,
 }
 impl Cache {
@@ -271,9 +265,7 @@ impl Cache {
                 .checked
                 .is_none_or(|at| self.failures == 0 || at.elapsed() >= RETRY[self.failures - 1])
     }
-    /// `need_duration` 为假（系统已给出有效曲长）时只用窗口标题补全歌手，不扫描进程内存。
     pub fn get(&mut self, title: &str, artist: &str, need_duration: bool) -> Option<(String, f64)> {
-        // 循环重载时窗口标题会短暂消失；同一首歌最多沿用两秒已核对的身份。
         let key = if let Some(key) = self.window(title, artist, false) {
             self.seen = Some(Instant::now());
             key
@@ -292,7 +284,6 @@ impl Cache {
             if self.value.is_none() {
                 self.failures += 1;
             }
-            // 扫描期间可能已切歌，扫描后重新核对一次窗口。
             if self
                 .window(title, artist, true)
                 .is_some_and(|next| next != key)
@@ -300,7 +291,6 @@ impl Cache {
                 return None;
             }
         }
-        // 曲长尚未就绪也能使用已核对的窗口署名，不能让合唱退化为单个歌手。
         let singer = key.1.strip_suffix(&format!(" - {title}"))?.to_owned();
         Some((
             singer,

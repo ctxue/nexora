@@ -13,7 +13,7 @@
     },
     @{
       Id = 'isle'
-      DisplayName = 'NEXORA ISLE · 星屿'
+      DisplayName = 'NEXORA ISLE · 岛屿'
       Directory = 'apps/nexora-isle'
       Scripts = @{
         Dev = 'scripts/dev.ps1'

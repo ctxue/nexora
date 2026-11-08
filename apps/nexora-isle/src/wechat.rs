@@ -1,4 +1,8 @@
-//! 只接收微信任务栏提醒；复用主窗口消息循环，不读取聊天内容。
+//! WeChat and QQ taskbar reminder observation.
+//!
+//! The listener uses window and process metadata only. It never reads contact,
+//! chat, or notification content from either client.
+
 use std::{
     cell::RefCell,
     path::PathBuf,
@@ -25,7 +29,6 @@ use windows::{
 const SUBCLASS_ID: usize = 0x5745_4348;
 const FLASH: usize = 0x8006;
 
-/// 看过某个账号后切走：这段时间内的闪动算作刚才那次提醒的余波。
 const LEAVE_GRACE: Duration = Duration::from_secs(4);
 
 #[derive(Default)]
@@ -35,17 +38,14 @@ struct Burst {
 }
 impl Burst {
     fn attention(&mut self, now: Instant) -> bool {
-        // 刚看完切走：任务栏补闪不算新提醒，但计入这一轮，持续闪动也继续合并。
         if self.quiet_until.is_some_and(|until| now < until) {
             self.last = Some(now);
             return false;
         }
-        // 连续闪动只提醒一次；停止闪动五秒后，下一轮才算新提醒。
         self.last
             .replace(now)
             .is_none_or(|last| now.duration_since(last) >= Duration::from_secs(5))
     }
-    /// 用户刚从这个账号的窗口切走。
     fn left(now: Instant) -> Self {
         Self {
             last: Some(now),
@@ -80,7 +80,6 @@ fn registry_string(root: HKEY, key: PCWSTR, name: PCWSTR) -> Option<String> {
     Some(String::from_utf16_lossy(&data[..length]))
 }
 
-// 只提取协议处理程序的路径，绝不执行注册表里的命令或参数。
 fn protocol_executable(command: &str) -> Option<PathBuf> {
     let command = command.trim();
     let exe = if let Some(quoted) = command.strip_prefix('"') {
@@ -123,12 +122,10 @@ fn installed_paths() -> Vec<String> {
         .filter_map(|p| p.canonicalize().ok())
         .map(|p| normalized(&p.to_string_lossy()))
         .collect();
-    // 注册表路径可能过期（升级、换目录、复制一份双开、绿色版）：再认文件名相同、且由腾讯发布的程序。
     paths.extend(["*weixin.exe".to_string(), "*wechat.exe".to_string()]);
     paths
 }
 
-/// 程序文件属性里的公司名（结果按路径缓存，避免每次读文件）。
 fn company_name(path: &str) -> String {
     use windows::Win32::Storage::FileSystem::{
         GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW,
@@ -200,7 +197,6 @@ fn company_name(path: &str) -> String {
     name
 }
 
-/// 路径完全一致；或命中「*文件名」且该程序由腾讯发布。
 fn path_allowed(image: &str, paths: &[String]) -> bool {
     if paths.iter().any(|p| p == image) {
         return true;
@@ -264,7 +260,6 @@ fn client_paths(source: crate::app::Messenger) -> Vec<String> {
             }
         }
     }
-    // QQ NT 的协议处理器在版本子目录中，主程序在安装根目录。
     if let Some(command) = registry_string(
         HKEY_CLASSES_ROOT,
         w!("tencent\\shell\\open\\command"),
@@ -338,7 +333,6 @@ fn window_pid(hwnd: HWND) -> u32 {
     pid
 }
 
-/// 前台是该客户端的主窗口时返回它所在的进程（多开时每个账号一个进程）。
 unsafe fn foreground_main_pid(source: crate::app::Messenger, paths: &[String]) -> Option<u32> {
     let hwnd = GetForegroundWindow();
     if IsIconic(hwnd).as_bool() || !visible_main_frame(hwnd, source) || !matches(hwnd, paths) {
@@ -361,7 +355,6 @@ unsafe fn visible_main_frame(hwnd: HWND, source: crate::app::Messenger) -> bool 
     )
 }
 
-/// 用户真正看得到、像主窗口的窗口：排除被系统隐藏（cloaked）、不在任何显示器上、或小于主窗口的弹窗。
 unsafe fn usable_main_frame(hwnd: HWND, source: crate::app::Messenger) -> bool {
     use windows::Win32::{
         Foundation::RECT,
@@ -389,7 +382,6 @@ unsafe fn usable_main_frame(hwnd: HWND, source: crate::app::Messenger) -> bool {
         && !MonitorFromWindow(hwnd, MONITOR_DEFAULTTONULL).0.is_null()
 }
 
-/// 进程 → 父进程。用来把闪动的子进程对应回它所属账号的微信主进程。
 fn parent_processes() -> std::collections::HashMap<u32, u32> {
     use windows::Win32::System::Diagnostics::ToolHelp::{
         CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
@@ -414,7 +406,6 @@ fn parent_processes() -> std::collections::HashMap<u32, u32> {
     parents
 }
 
-/// 从 `pid` 往上的祖先进程（不含自己），最多 8 层，遇到环或系统进程即止。
 fn ancestors(pid: u32, parents: &std::collections::HashMap<u32, u32>) -> Vec<u32> {
     let mut chain = Vec::new();
     let mut current = pid;
@@ -439,7 +430,6 @@ pub fn client_in_foreground(source: crate::app::Messenger) -> bool {
     unsafe { foreground_main_pid(source, &client_paths(source)).is_some() }
 }
 
-/// 当前前台的微信 / QQ 主窗口：来源与账号进程。
 pub fn foreground_client(
     sources: &[crate::app::Messenger],
 ) -> Option<(crate::app::Messenger, u32)> {
@@ -448,7 +438,6 @@ pub fn foreground_client(
     })
 }
 
-/// 跳到某条未读对应的窗口。
 pub fn open_unread(unread: crate::app::Unread) -> Result<(), String> {
     open_unread_with_paths(unread, &client_paths(unread.source))
 }
@@ -456,8 +445,6 @@ pub fn open_unread(unread: crate::app::Unread) -> Result<(), String> {
 fn open_unread_with_paths(unread: crate::app::Unread, paths: &[String]) -> Result<(), String> {
     let window = HWND(unread.window as *mut _);
     if unread.source == crate::app::Messenger::Wechat {
-        // 微信 4 闪动的句柄常是隐藏的 Qt 辅助窗口：从外部显示它会出现白屏、拖死微信。
-        // 只切换到该账号进程里已可见的主窗口；绝不显示隐藏窗口，也不另起 Weixin.exe。
         unsafe {
             let target = if unread.pid == 0 {
                 None
@@ -470,7 +457,6 @@ fn open_unread_with_paths(unread: crate::app::Unread, paths: &[String]) -> Resul
                 account_main_window(unread.pid, unread.source, paths)
             };
             if let Some(target) = target {
-                // 异步恢复：微信卡住时也不能拖住NEXORA ISLE的界面线程。
                 if IsIconic(target).as_bool() {
                     ShowWindowAsync(target, SW_RESTORE)
                         .ok()
@@ -502,7 +488,6 @@ fn open_unread_with_paths(unread: crate::app::Unread, paths: &[String]) -> Resul
     open_client(unread.source)
 }
 
-/// 托盘唤起的诊断：只记步骤、窗口类名、位置和系统版本，不记窗口标题、提示文字或聊天内容。
 struct TrayLog(Vec<String>);
 impl TrayLog {
     fn new(unread: crate::app::Unread) -> Self {
@@ -522,7 +507,6 @@ impl TrayLog {
     fn step(&mut self, line: impl Into<String>) {
         self.0.push(line.into());
     }
-    /// 写入日志并返回给用户看的提示（带错误码，便于反馈）。
     fn fail(mut self, code: &str, reason: &str) -> String {
         self.step(format!("失败 {code}：{reason}"));
         let directory = crate::model::config_dir().join("diagnostics");
@@ -545,7 +529,6 @@ fn class_name(hwnd: HWND) -> String {
     String::from_utf16_lossy(&class[..n])
 }
 
-/// 所有微信进程的托盘消息窗口：（进程，窗口）。
 unsafe fn tray_hosts(paths: &[String]) -> Vec<(u32, HWND)> {
     use windows::Win32::Foundation::BOOL;
     struct Find<'a> {
@@ -554,7 +537,6 @@ unsafe fn tray_hosts(paths: &[String]) -> Vec<(u32, HWND)> {
     }
     unsafe extern "system" fn visit(hwnd: HWND, data: LPARAM) -> BOOL {
         let find = &mut *(data.0 as *mut Find);
-        // 微信 4.x 为 Qt…WxTrayIconMessageWindowClass；只认类名里带 TrayIcon 且属于微信安装路径的窗口。
         if class_name(hwnd).contains("TrayIcon") && matches(hwnd, find.paths) {
             find.hosts.push((window_pid(hwnd), hwnd));
         }
@@ -568,7 +550,6 @@ unsafe fn tray_hosts(paths: &[String]) -> Vec<(u32, HWND)> {
     find.hosts
 }
 
-/// 该账号的托盘窗口与唯一的图标编号。闪动进程没有托盘窗口而全机只有一个微信托盘时（单开），用那一个。
 unsafe fn tray_icon(pid: u32, paths: &[String], log: &mut TrayLog) -> Option<(HWND, u32)> {
     let hosts = tray_hosts(paths);
     log.step(format!(
@@ -587,20 +568,17 @@ unsafe fn tray_icon(pid: u32, paths: &[String], log: &mut TrayLog) -> Option<(HW
         "闪动进程 {pid} 的祖先：{:?}",
         ancestors(pid, &parents)
     ));
-    let account = account_tray_pid(pid, &host_pids, &parents).or_else(|| {
-        // 只有闪动来自微信进程（或来源未知）时，才退到全机唯一的微信托盘（单开）。
-        match host_pids.as_slice() {
+    let account =
+        account_tray_pid(pid, &host_pids, &parents).or_else(|| match host_pids.as_slice() {
             [only] if pid == 0 || pid_matches(pid, paths) => Some(*only),
             _ => None,
-        }
-    });
+        });
     log.step(format!("对应的托盘进程：{account:?}"));
     let candidates: Vec<HWND> = hosts
         .iter()
         .filter(|(p, _)| Some(*p) == account)
         .map(|(_, h)| *h)
         .collect();
-    // 同一进程可能有多个托盘窗口：全部图标里只有一个时才用，否则分不清账号就放弃。
     let icons: Vec<(HWND, u32)> = candidates
         .iter()
         .flat_map(|&h| {
@@ -623,7 +601,6 @@ unsafe fn tray_icon(pid: u32, paths: &[String], log: &mut TrayLog) -> Option<(HW
     }
 }
 
-/// 闪动进程所属账号的托盘进程：自己 → 最近的祖先 → 唯一的后代。双开时两个账号互不相干，不会串号。
 fn account_tray_pid(
     pid: u32,
     hosts: &[u32],
@@ -652,7 +629,6 @@ fn account_tray_pid(
     }
 }
 
-/// 该账号能切换过去的主窗口：先找闪动进程自己，再找它的微信祖先进程。
 unsafe fn account_main_window(
     pid: u32,
     source: crate::app::Messenger,
@@ -671,7 +647,6 @@ unsafe fn account_main_window(
         .find_map(|p| visible_main_window_of(p, source, paths))
 }
 
-/// 该账号缩在托盘（没有可见主窗口，但有托盘图标）时返回 Ok；否则返回给用户的提示，并记录诊断。
 pub fn wechat_in_tray(unread: crate::app::Unread) -> Result<(), String> {
     if unread.source != crate::app::Messenger::Wechat {
         return Err("请从任务栏或托盘打开微信".into());
@@ -726,7 +701,6 @@ fn rect_center_inside(
         && y < outer.bottom
 }
 
-/// 覆盖图标中心、大小与托盘按钮相当的控件（排除整条任务栏之类的容器）。
 fn button_sized(
     icon: windows::Win32::Foundation::RECT,
     button: windows::Win32::Foundation::RECT,
@@ -744,9 +718,6 @@ fn show_rect(r: windows::Win32::Foundation::RECT) -> String {
     format!("({},{})-({},{})", r.left, r.top, r.right, r.bottom)
 }
 
-/// 微信缩在托盘时：通过无障碍接口按下该账号自己的托盘按钮，由微信自己唤起主窗口。
-/// 不移动鼠标、不向微信发送内部消息、不注入、不读取内容；定位不到唯一按钮就放弃。
-/// 兼容新版 Win11 托盘与 Windows 10 / 早期 Win11 的旧式托盘。会阻塞几百毫秒，必须在后台线程调用。
 pub fn open_wechat_from_tray(unread: crate::app::Unread) -> Result<(), String> {
     use windows::{
         core::Interface,
@@ -779,7 +750,6 @@ pub fn open_wechat_from_tray(unread: crate::app::Unread) -> Result<(), String> {
         let Ok(all) = ui.CreateTrueCondition() else {
             return Err(log.fail("T2", "无障碍查询条件创建失败"));
         };
-        // 在某个窗口里找覆盖图标中心、大小像托盘按钮、可以按下的最小控件。
         let button_at =
             |window: HWND, icon: RECT, log: &mut TrayLog| -> Option<IUIAutomationElement> {
                 let root = ui.ElementFromHandle(window).ok()?;
@@ -826,7 +796,6 @@ pub fn open_wechat_from_tray(unread: crate::app::Unread) -> Result<(), String> {
                 .and_then(|p| p.Invoke())
                 .is_ok()
         };
-        // 新版 Win11 与旧式（Windows 10 / 早期 Win11）的折叠区窗口。
         let overflow_open = || {
             [
                 w!("TopLevelWindowForOverflowXamlIsland"),
@@ -854,7 +823,6 @@ pub fn open_wechat_from_tray(unread: crate::app::Unread) -> Result<(), String> {
                 return Err(log.fail("T5", "任务栏按钮无法按下"));
             }
             std::thread::sleep(Duration::from_millis(250));
-            // 按下后折叠区展开了：说明图标收在折叠区，命中的是「显示隐藏的图标」（新版 Win11 会报告这个位置）。
             if was_open || overflow_open().is_none() {
                 return Ok(());
             }
@@ -862,7 +830,6 @@ pub fn open_wechat_from_tray(unread: crate::app::Unread) -> Result<(), String> {
             chevron = button;
             from_chevron = true;
         } else {
-            // 旧式托盘：收起的图标位置在隐藏的折叠窗口里，先用「显示隐藏的图标」按钮展开。
             let tray = FindWindowExW(taskbar, None, w!("TrayNotifyWnd"), PCWSTR::null()).ok();
             let button =
                 tray.and_then(|t| FindWindowExW(t, None, w!("Button"), PCWSTR::null()).ok());
@@ -888,7 +855,6 @@ pub fn open_wechat_from_tray(unread: crate::app::Unread) -> Result<(), String> {
             let Some(overflow) = overflow_open() else {
                 continue;
             };
-            // 折叠区展开后，系统报告的才是图标在折叠区里的真实位置；多开时据此区分账号。
             let Some(inside) =
                 tray_rect(host, id).filter(|r| !from_chevron || !rect_center_inside(*r, icon))
             else {
@@ -907,7 +873,6 @@ pub fn open_wechat_from_tray(unread: crate::app::Unread) -> Result<(), String> {
         if pressed {
             return Ok(());
         }
-        // 没按成：把展开的折叠区收回去，不留在屏幕上。
         if !was_open && overflow_open().is_some() {
             let _ = invoke(&chevron);
         }
@@ -922,7 +887,6 @@ pub fn open_wechat_from_tray(unread: crate::app::Unread) -> Result<(), String> {
     }
 }
 
-/// 某个账号进程里用户看得到的主窗口（多开时每个进程一个）：有多个时取最大的，最小化的排在后面。
 unsafe fn visible_main_window_of(
     pid: u32,
     source: crate::app::Messenger,
@@ -1067,11 +1031,8 @@ struct State {
     taskbar_created: u32,
     registered: bool,
     paths: Vec<String>,
-    /// 每个微信进程（账号）各自合并连续闪动。
     burst: Vec<(u32, Burst)>,
-    /// 尚未取走的提醒：账号进程与闪动的窗口。
     pending: Vec<(u32, isize)>,
-    /// 当前正在前台查看的账号进程。
     viewing: Vec<u32>,
     ctx: eframe::egui::Context,
 }
@@ -1094,7 +1055,6 @@ unsafe extern "system" fn subclass(
             if message == state.message && matches!(wp.0, FLASH | 4 | 0x8004) {
                 let target = HWND(lp.0 as *mut _);
                 let foreground = foreground_main_pid(crate::app::Messenger::Wechat, &state.paths);
-                // 刚看过的账号已不在前台（Alt+Tab 切走、点了别的窗口，或漏掉了切换事件）：开始宽限期。
                 let now = Instant::now();
                 let left: Vec<u32> = state
                     .viewing
@@ -1132,7 +1092,6 @@ unsafe extern "system" fn subclass(
                         if state.pending.iter().any(|(p, _)| *p == pid) {
                             trace(format!("  → 账号 {pid} 在前台，清掉待取提醒"));
                         }
-                        // 正在看这个账号：它的提醒作废，其它账号不受影响。
                         state.burst.retain(|(p, _)| *p != pid);
                         state.pending.retain(|(p, _)| *p != pid);
                         if !state.viewing.contains(&pid) {
@@ -1176,7 +1135,6 @@ unsafe extern "system" fn subclass(
     DefSubclassProc(hwnd, message, wp, lp)
 }
 
-/// 窗口的简短描述：句柄、类名、可见 / 最小化。不读标题。
 fn describe(hwnd: HWND) -> String {
     if hwnd.0.is_null() {
         return "无".into();
@@ -1200,7 +1158,6 @@ fn describe(hwnd: HWND) -> String {
     }
 }
 
-/// 当前前台窗口的描述（给主程序写事件记录用）。
 pub fn describe_foreground() -> String {
     unsafe {
         let h = GetForegroundWindow();
@@ -1208,7 +1165,6 @@ pub fn describe_foreground() -> String {
     }
 }
 
-/// 微信提醒事件记录：只保留最近 300 条，写到 diagnostics/wechat-events.log；不记标题和聊天内容。
 pub fn trace(line: impl Into<String>) {
     static LOG: std::sync::Mutex<std::collections::VecDeque<String>> =
         std::sync::Mutex::new(std::collections::VecDeque::new());
@@ -1288,7 +1244,6 @@ impl Listener {
     pub fn registered(&self) -> bool {
         self.state.borrow().registered
     }
-    /// 取走新提醒：每项是（账号进程，闪动的窗口）。
     pub fn take(&self) -> Vec<(u32, isize)> {
         std::mem::take(&mut self.state.borrow_mut().pending)
     }
@@ -1344,7 +1299,6 @@ mod tests {
     #[test]
     fn clicking_wechat_flash_never_shows_hidden_qt_frame() {
         unsafe {
-            // 微信 4 隐藏的 Qt 窗口可能带系统菜单或最小化按钮，不能通过 SW_SHOW 显示。
             use windows::Win32::System::LibraryLoader::GetModuleHandleW;
             unsafe extern "system" fn proc(h: HWND, m: u32, w: WPARAM, l: LPARAM) -> LRESULT {
                 DefWindowProcW(h, m, w, l)
@@ -1441,7 +1395,6 @@ mod tests {
     #[test]
     fn dual_open_flashes_map_to_their_own_tray() {
         use std::collections::HashMap;
-        // 两个账号：主号 100（子进程 101、102），备用号 200（子进程 201），都由启动器 50 拉起。
         let parents: HashMap<u32, u32> = [
             (100, 50),
             (101, 100),
@@ -1470,22 +1423,18 @@ mod tests {
             "启动器下有两个账号时分不清，不得猜"
         );
         assert_eq!(account_tray_pid(0, &hosts, &parents), None);
-        // 备用号由主号拉起：备用号子进程取最近的祖先，不串到主号。
         let nested: HashMap<u32, u32> = [(100, 50), (200, 100), (201, 200)].into_iter().collect();
         assert_eq!(account_tray_pid(201, &hosts, &nested), Some(200));
-        // 托盘在闪动进程的子进程里（只有一个时才用）。
         assert_eq!(
             account_tray_pid(100, &[300], &[(300, 100)].into_iter().collect()),
             Some(300)
         );
-        // 父进程表里有环也不会卡住。
         let cycle: HashMap<u32, u32> = [(1, 2), (2, 1)].into_iter().collect();
         assert_eq!(account_tray_pid(1, &[9], &cycle), None);
     }
     #[test]
     fn offscreen_wechat_frame_is_not_treated_as_open() {
         unsafe {
-            // 复现双开主号：有一个「可见」但不在任何显示器上的微信窗口，过去会被当成主窗口「切换」过去，用户什么也看不到。
             use windows::Win32::System::LibraryLoader::GetModuleHandleW;
             unsafe extern "system" fn proc(h: HWND, m: u32, w: WPARAM, l: LPARAM) -> LRESULT {
                 DefWindowProcW(h, m, w, l)
@@ -1579,7 +1528,6 @@ mod tests {
             "相邻图标不得命中"
         );
         assert!(!rect_center_inside(icon, RECT::default()), "空矩形不得命中");
-        // 旧式托盘按钮比图标略大；整条任务栏这类容器不算按钮。
         assert!(button_sized(
             RECT {
                 left: 1600,
@@ -1606,7 +1554,6 @@ mod tests {
     }
     #[test]
     fn tray_open_rejects_unknown_accounts() {
-        // 非微信进程的闪动不得退到本机微信托盘（本机装了微信时也一样）。
         assert!(open_wechat_from_tray(crate::app::Unread {
             source: crate::app::Messenger::Wechat,
             pid: std::process::id(),
@@ -1890,7 +1837,6 @@ mod tests {
     }
     #[test]
     fn wechat_is_recognized_by_tencent_file_name_when_registry_path_is_stale() {
-        // 注册表里的旧路径对不上时，仍按「文件名 + 腾讯发布」识别；其它公司的同名程序不算。
         let stale = vec![
             normalized(r"C:\Old\Weixin\Weixin.exe"),
             "*weixin.exe".to_string(),
@@ -1902,7 +1848,6 @@ mod tests {
             "注册表路径仍直接认"
         );
         assert!(!path_allowed(&me, &[]));
-        // 本机装了微信时，用它的真实程序验证：路径列表里只有过期路径也能认出来。
         if let Some(real) = installed_paths().into_iter().find(|p| !p.starts_with('*')) {
             assert!(
                 company_name(&real).to_lowercase().contains("tencent"),
@@ -1921,7 +1866,6 @@ mod tests {
     }
     #[test]
     fn flashes_right_after_leaving_a_viewed_account_do_not_remind_again() {
-        // 群友反馈：最小化收到消息 → Alt+Tab 过去看了 → 再 Alt+Tab 切走，未读又出现。
         let start = Instant::now();
         let mut burst = Burst::left(start);
         assert!(

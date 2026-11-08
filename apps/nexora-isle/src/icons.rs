@@ -1,8 +1,3 @@
-//! 系统文件缩略图 / 图标。
-//!
-//! 优先用 `IShellItemImageFactory` 取 96 px 缩略图（图片显示真实缩略图，与资源管理器一致），
-//! 失败再用 `SHGetFileInfoW` 取 32 px 大图标；都失败返回 `None`，界面改画矢量文件图标。
-
 use eframe::egui::{self, ColorImage};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -222,9 +217,8 @@ fn thumbnail(path: &Path, size: i32) -> Option<(usize, usize, Vec<u8>)> {
         if lines == 0 {
             return None;
         }
-        // BGRA（预乘）→ RGBA；JPEG 之类的缩略图 alpha 全 0，当作不透明
-        let opaque = px.chunks_exact(4).all(|p| p[3] == 0);
-        for p in px.chunks_exact_mut(4) {
+        let opaque = px.as_chunks::<4>().0.iter().all(|p| p[3] == 0);
+        for p in px.as_chunks_mut::<4>().0 {
             p.swap(0, 2);
             if opaque {
                 p[3] = 255;
@@ -288,7 +282,6 @@ fn shell_icon(path: &Path) -> Option<ColorImage> {
                 let old = SelectObject(dc, HGDIOBJ(bmp.0));
                 let _ = DrawIconEx(dc, 0, 0, icon, SIZE, SIZE, 0, None, DI_NORMAL);
                 SelectObject(dc, old);
-                // 图标是 32 位 BGRA（直通 alpha）
                 let n = (SIZE * SIZE) as usize;
                 let src = std::slice::from_raw_parts(bits as *const u8, n * 4);
                 out = Some(src.to_vec());
@@ -300,8 +293,7 @@ fn shell_icon(path: &Path) -> Option<ColorImage> {
         out
     };
     let mut src = rgba?;
-    // BGRA -> RGBA
-    for px in src.chunks_exact_mut(4) {
+    for px in src.as_chunks_mut::<4>().0 {
         px.swap(0, 2);
     }
     let img = ColorImage::from_rgba_unmultiplied([SIZE as usize, SIZE as usize], &src);

@@ -95,7 +95,6 @@ unsafe fn hbitmap_to_image(
         return None;
     }
 
-    // GetDIBits returns BGRA; the renderer expects RGBA.
     for pixel in pixels.as_chunks_mut::<4>().0 {
         pixel.swap(0, 2);
     }

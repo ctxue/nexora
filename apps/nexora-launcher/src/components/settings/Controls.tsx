@@ -1,6 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
 
-/** Two-state switch used across the settings pages. */
 export function Toggle({
   checked,
   onClick,
@@ -27,7 +26,6 @@ export function Toggle({
   );
 }
 
-/** Renders `Alt+Space` as two key caps. */
 export function ShortcutKeys({ shortcut }: { shortcut: string }) {
   return (
     <span className="settings-shortcut-keys">
@@ -44,7 +42,6 @@ export interface SegmentOption<T extends string> {
   icon?: ReactNode;
 }
 
-/** Compact segmented control (language, theme, recent count…). */
 export function Segmented<T extends string>({
   options,
   value,
@@ -83,7 +80,6 @@ export function Segmented<T extends string>({
   );
 }
 
-/** Slider with a filled track and the current value on the right. */
 export function SliderRow({
   value,
   min,

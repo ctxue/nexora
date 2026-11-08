@@ -19,9 +19,6 @@ unsafe fn display_name(
     text
 }
 
-/// Enumerates the modern Windows "Apps" folder. Unlike the Start Menu, this
-/// includes UWP/MSIX applications (for example Windows Terminal) and exposes
-/// their localized display names.
 pub fn scan_apps_folder() -> Vec<(String, String)> {
     unsafe {
         let initialized = CoInitializeEx(None, COINIT_APARTMENTTHREADED).is_ok();

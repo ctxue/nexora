@@ -1,4 +1,3 @@
-//! 邮件全文阅读窗口：完整文字、收件账号和网页链接。
 use crate::app::{App, Cmd};
 use eframe::egui::{self, Color32, Vec2};
 

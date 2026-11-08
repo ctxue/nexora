@@ -1,4 +1,3 @@
-//! 输入提示同时核对切换按键与实际输入状态。
 use std::time::{Duration, Instant};
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct State {
@@ -69,7 +68,6 @@ impl State {
                         );
                         (ok.0 != 0).then_some(value)
                     };
-                    // 查询前台输入法线程，避免跨进程获取输入上下文失败。
                     native = query(0x0005).and_then(|open| {
                         if open == 0 {
                             Some(false)
@@ -211,7 +209,6 @@ impl SwitchKeys {
             self.held &= !bit;
         }
         let chord = if down { self.held } else { before };
-        // Shift、Ctrl+Shift、Alt+Shift；组合中输入过其他键则不视为切换。
         if !self.used && chord & 1 != 0 && chord & 8 == 0 {
             self.pending = Some((context, now));
         }

@@ -1,5 +1,3 @@
-//! Lightweight Windows system monitoring and alert history.
-
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -258,7 +256,7 @@ pub fn group_processes(
     let mut all: Vec<_> = grouped.into_values().collect();
     all.sort_by(|a, b| b.cpu_percent.total_cmp(&a.cpu_percent));
     let by_cpu = all.iter().take(cpu_limit).cloned().collect();
-    all.sort_by(|a, b| b.memory_bytes.cmp(&a.memory_bytes));
+    all.sort_by_key(|entry| std::cmp::Reverse(entry.memory_bytes));
     let by_memory = all.into_iter().take(memory_limit).collect();
     GroupedProcesses { by_cpu, by_memory }
 }
@@ -489,6 +487,7 @@ mod sampler {
         ((value.dwHighDateTime as u64) << 32) | value.dwLowDateTime as u64
     }
 
+    #[allow(clippy::type_complexity)]
     fn process_snapshot(
         previous: &HashMap<u32, (u64, u64)>,
         elapsed: f64,
@@ -542,7 +541,7 @@ mod sampler {
         let memory_ok = unsafe { GetProcessMemoryInfo(process, &mut memory, memory.cb).is_ok() };
         let mut path_buffer = vec![0u16; 32_768];
         let mut path_len = path_buffer.len() as u32;
-        let path = unsafe {
+        let path = if unsafe {
             QueryFullProcessImageNameW(
                 process,
                 PROCESS_NAME_WIN32,
@@ -551,8 +550,11 @@ mod sampler {
             )
         }
         .is_ok()
-        .then(|| PathBuf::from(String::from_utf16_lossy(&path_buffer[..path_len as usize])))
-        .unwrap_or_default();
+        {
+            PathBuf::from(String::from_utf16_lossy(&path_buffer[..path_len as usize]))
+        } else {
+            Default::default()
+        };
         let _ = unsafe { CloseHandle(process) };
         times.ok()?;
         if !memory_ok {

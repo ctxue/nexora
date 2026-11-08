@@ -1,5 +1,3 @@
-//! Safe file preview command.
-
 use crate::preview::{read_preview, PreviewData};
 
 #[tauri::command]

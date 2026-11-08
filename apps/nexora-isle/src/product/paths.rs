@@ -1,5 +1,3 @@
-//! Isolated storage paths for NEXORA ISLE.
-
 use std::ffi::OsString;
 use std::path::PathBuf;
 
@@ -30,8 +28,6 @@ fn migrate_legacy_data_dir(current: PathBuf, legacy: PathBuf) -> PathBuf {
     if std::fs::rename(&legacy, &current).is_ok() {
         current
     } else {
-        // A previous process may still hold files in the legacy directory.
-        // Keep using it so settings remain available, then retry on next launch.
         legacy
     }
 }

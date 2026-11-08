@@ -1,5 +1,3 @@
-//! Explorer and process actions offered by the result action panel.
-
 use std::process::Command;
 
 use windows::{

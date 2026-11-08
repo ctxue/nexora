@@ -22,7 +22,6 @@ interface SearchBarProps {
   onClear: () => void;
   onDragStart: () => void;
   onActivateScope?: (value: string) => boolean;
-  /** Active command scope: the typed keyword became a chip. */
   scope?: { title: string; keyword: string; icon: CommandIcon } | null;
   onClearScope?: () => void;
 }

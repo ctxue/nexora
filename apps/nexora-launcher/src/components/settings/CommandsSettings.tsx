@@ -188,7 +188,6 @@ export function CommandsSettings({
       const path = await picker();
       if (path) patchAction({ target: path });
     } catch {
-      // Cancelled or unavailable; the field keeps its value.
     }
   };
 

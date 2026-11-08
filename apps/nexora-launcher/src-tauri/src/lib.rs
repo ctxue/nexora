@@ -1,20 +1,7 @@
-//! Crate entry point.
+//! NEXORA launcher backend library.
 //!
-//! The binary only boots the Windows application; every concern lives in its
-//! own module so the codebase stays navigable:
-//!
-//! - [`app`]          bootstraps Tauri (plugins, setup, window events)
-//! - [`config`]       constants: sizes, limits, colors, labels, fallbacks
-//! - [`models`]       serde payloads shared with the frontend
-//! - [`state`]        state managed by Tauri
-//! - [`commands`]     `#[tauri::command]` handlers, grouped by domain
-//! - [`scanning`]     start-menu / file indexing and fuzzy search
-//! - [`launcher`]     showing, hiding, and focusing the launcher window
-//! - [`platform`]     Windows integration (hooks, wndproc, DWM, dialogs)
-//! - [`tray`]         tray icon and its menu
-//!
-//! Files at the crate root (`apps`, `icons`, `shell_icon`) are thin wrappers
-//! around Win32 / shell APIs used by the modules above.
+//! Tauri setup, Win32 integration, scanning, commands, and persisted state are
+//! separated by responsibility. The binary entry point only starts this crate.
 
 mod app;
 mod apps;

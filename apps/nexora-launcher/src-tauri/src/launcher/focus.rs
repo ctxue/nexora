@@ -1,11 +1,7 @@
-//! Bringing the launcher to the foreground and keeping its input alive.
+//! Launcher foreground activation and WebView readiness.
 //!
-//! Two Windows behaviours make this non-trivial:
-//! * a background process may only take the foreground if it owns the latest
-//!   input, so the focus call borrows the foreground thread's input queue;
-//! * the webview lives in a child window, and until it owns the keyboard the
-//!   characters land on the frame (which beeps). Those keys are buffered and
-//!   replayed once the webview is ready.
+//! Windows foreground-lock rules and WebView2 startup introduce separate races;
+//! both are handled with bounded state and replay rather than polling UI events.
 
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -28,12 +24,9 @@ use windows::Win32::{
     },
 };
 
-/// Set while the launcher is visible but the webview may not accept keys yet.
 pub static CAPTURE_KEYS: AtomicBool = AtomicBool::new(false);
-/// Keys typed before the webview owned the keyboard, replayed once it does.
 pub static EARLY_KEYS: Mutex<Vec<(u32, u32, u32)>> = Mutex::new(Vec::new());
 
-/// Raises the launcher and moves keyboard focus into the webview.
 pub fn focus_launcher(window: &WebviewWindow) {
     let Ok(hwnd) = window.hwnd() else {
         return;
@@ -55,11 +48,9 @@ pub fn focus_launcher(window: &WebviewWindow) {
         }
     }
 
-    // The webview is a child window: give it the keyboard, not just the frame.
     let _ = window.as_ref().set_focus();
 }
 
-/// True once the webview child owns the keyboard for the launcher.
 pub fn has_keyboard_focus(hwnd: HWND) -> bool {
     unsafe {
         let thread = GetWindowThreadProcessId(hwnd, None);
@@ -73,8 +64,6 @@ pub fn has_keyboard_focus(hwnd: HWND) -> bool {
     }
 }
 
-/// Replays keys buffered during warm-up through SendInput, so the IME composes
-/// them exactly as if the user had typed straight into the focused input.
 pub fn replay_early_keys() {
     CAPTURE_KEYS.store(false, Ordering::Relaxed);
 
@@ -113,9 +102,6 @@ pub fn replay_early_keys() {
     }
 }
 
-/// Waits until the webview owns the keyboard, then immediately replays the
-/// short warm-up buffer and switches to direct typing. Waiting for a quiet
-/// pause here made every burst typed right after opening appear in one batch.
 pub fn wait_for_input_then_replay(window: &WebviewWindow) {
     let Ok(handle) = window.hwnd() else {
         CAPTURE_KEYS.store(false, Ordering::Relaxed);

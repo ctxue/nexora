@@ -5,11 +5,9 @@ export interface IndexFolder {
 
 export interface IndexState {
   folders: IndexFolder[];
-  /** Bumped to force a rescan without changing the folders. */
   updatedAt: number;
 }
 
-/** localStorage key holding the user's configurable index folders. */
 export const INDEX_FOLDERS_KEY = "nexora.indexes.v1";
 
 function normalizeFolderPath(path: string): string {
@@ -64,6 +62,5 @@ export function saveIndexState(state: IndexState) {
   try {
     window.localStorage.setItem(INDEX_FOLDERS_KEY, JSON.stringify(state));
   } catch {
-    // A full quota must not break app search.
   }
 }

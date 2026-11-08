@@ -1,6 +1,3 @@
-//! Native dialogs used to export/import the configuration and to pick the
-//! paths the user adds to the launcher (applications, files, folders).
-
 use std::path::PathBuf;
 
 use tauri::Manager;
@@ -31,7 +28,6 @@ use crate::{
     platform::hooks::hook_app,
 };
 
-/// UTF-16 with a trailing NUL, as Win32 expects.
 fn wide(value: &str) -> Vec<u16> {
     value.encode_utf16().chain(std::iter::once(0)).collect()
 }
@@ -47,7 +43,6 @@ fn owner_window() -> HWND {
         .unwrap_or_default()
 }
 
-/// Documents is always writable, unlike the directory the app started from.
 fn start_directory() -> Vec<u16> {
     let directory = dirs::document_dir()
         .or_else(dirs::home_dir)
@@ -63,7 +58,6 @@ fn buffer_path(buffer: &[u16]) -> PathBuf {
     PathBuf::from(String::from_utf16_lossy(&buffer[..end]))
 }
 
-/// Asks for a destination and returns it, or `None` when cancelled.
 pub fn ask_save_path() -> Option<PathBuf> {
     let mut buffer = vec![0u16; CONFIG_DIALOG_BUFFER];
     let suggested = wide(CONFIG_EXPORT_FILE_NAME);
@@ -119,24 +113,19 @@ fn ask_file(filter: &str, title: &str) -> Option<PathBuf> {
     Some(buffer_path(&buffer))
 }
 
-/// Asks for a configuration file and returns it, or `None` when cancelled.
 pub fn ask_open_path() -> Option<PathBuf> {
     ask_file(CONFIG_DIALOG_FILTER, CONFIG_IMPORT_TITLE)
 }
 
-/// Asks for an executable, used to add portable applications.
 pub fn ask_executable() -> Option<PathBuf> {
     ask_file(EXE_DIALOG_FILTER, ADD_APP_TITLE)
 }
 
-/// Asks for any file, used by "open path" commands.
 pub fn ask_file_any() -> Option<PathBuf> {
     ask_file(ANY_FILE_DIALOG_FILTER, PICK_FILE_TITLE)
 }
 
-/// Asks for a folder with the classic shell picker.
 pub fn ask_folder() -> Option<PathBuf> {
-    // BIF_NEWDIALOGSTYLE needs COM on the calling thread.
     let initialized = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED).is_ok() };
 
     let title = wide(PICK_FOLDER_TITLE);

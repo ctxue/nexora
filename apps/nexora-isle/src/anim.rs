@@ -1,9 +1,3 @@
-//! 动效基础件：弹簧、缓动与插值。
-//!
-//! 所有形变都用「带速度的弹簧」驱动：目标随时可改，速度保留，
-//! 所以展开途中移开、收起途中回来都不会跳变，这是「丝滑」的关键。
-
-/// 二阶阻尼弹簧 `x'' = -k(x - target) - c·x'`，半隐式欧拉 + 子步长积分。
 #[derive(Clone, Copy, Debug)]
 pub struct Spring {
     pub pos: f32,
@@ -14,7 +8,6 @@ pub struct Spring {
 }
 
 impl Spring {
-    /// `stiffness` = k，`zeta` = 阻尼比（<1 有过冲，=1 临界阻尼）。
     pub fn new(value: f32, stiffness: f32, zeta: f32) -> Self {
         let mut s = Self {
             pos: value,
@@ -39,7 +32,6 @@ impl Spring {
     }
 
     pub fn step(&mut self, dt: f32) {
-        // 掉帧时限幅，避免一帧跨太远；子步 ≤ 1/480 s，保证在 30–240 Hz 下轨迹一致。
         let dt = dt.clamp(0.0, 0.1);
         let n = (dt * 480.0).ceil().max(1.0) as usize;
         let h = dt / n as f32;
@@ -50,7 +42,6 @@ impl Spring {
         }
     }
 
-    /// 相对 `scale` 足够接近目标且几乎静止。
     pub fn settled(&self, scale: f32) -> bool {
         (self.pos - self.target).abs() < 0.002 * scale && self.vel.abs() < 0.02 * scale
     }
@@ -64,9 +55,7 @@ pub fn clamp01(t: f32) -> f32 {
     t.clamp(0.0, 1.0)
 }
 
-/// 把 `x` 从 [a, b] 线性映射到 [0, 1] 并钳制。
 pub fn remap(x: f32, a: f32, b: f32) -> f32 {
-    // 允许 a > b（反向区间，用于“越靠近边缘越淡”这类渐隐）
     let d = b - a;
     if d.abs() < 1e-6 {
         return if x >= b { 1.0 } else { 0.0 };
@@ -93,12 +82,10 @@ pub fn ease_in_out(t: f32) -> f32 {
     }
 }
 
-/// 帧率无关的指数逼近：`rate` 越大越快（约 1/rate 秒到 63%）。
 pub fn approach(cur: f32, target: f32, rate: f32, dt: f32) -> f32 {
     cur + (target - cur) * (1.0 - (-rate * dt).exp())
 }
 
-/// 确定性的伪随机（0..1），给岛屿眨眼/张望用，录屏可复现。
 pub fn hash01(n: u64) -> f32 {
     let mut x = n.wrapping_mul(0x9E37_79B9_7F4A_7C15);
     x ^= x >> 31;

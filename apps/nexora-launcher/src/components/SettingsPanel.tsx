@@ -1,3 +1,5 @@
+// Settings shell and section layout. Feature forms live in `components/settings`.
+
 import {
   AlertCircle,
   Download,

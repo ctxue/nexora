@@ -1,4 +1,7 @@
-//! Tauri bootstrap: plugins, managed state, setup, and window events.
+//! Tauri application bootstrap.
+//!
+//! Plugins, managed state, startup setup, and window event routing are composed
+//! here; feature logic remains in the `commands` and `launcher` modules.
 
 use tauri::{Manager, WindowEvent};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
@@ -17,7 +20,6 @@ use crate::{
     tray,
 };
 
-/// Registers the default shortcut, falling back when it is already taken.
 fn register_initial_shortcut(app: &tauri::AppHandle) {
     let shortcuts = app.global_shortcut();
     let mut error = None;
@@ -72,7 +74,6 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
     tray::setup(app)?;
 
-    // Installed plugins live next to the app's own data.
     let plugin_root = app.path().app_data_dir()?.join("plugins");
     std::fs::create_dir_all(&plugin_root)?;
     app.manage(commands::plugins::PluginHost::new(plugin_root));
@@ -88,7 +89,6 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let launched_at_startup = std::env::args().any(|arg| arg == AUTOSTART_FLAG);
     if !launched_at_startup {
         if has_shortcut_error(app.handle()) {
-            // Surface the conflict instead of silently opening the launcher.
             if let Err(error) = commands::open_settings_window(app.handle().clone()) {
                 eprintln!("{error}");
             }
@@ -178,8 +178,6 @@ pub fn run() {
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _shortcut, event| {
                     if event.state == ShortcutState::Pressed {
-                        // Capture from the hotkey itself so nothing typed before
-                        // the window is ready falls through to the old window.
                         CAPTURE_KEYS.store(true, std::sync::atomic::Ordering::Relaxed);
                         toggle_launcher(app);
                     }
@@ -243,7 +241,6 @@ pub fn run() {
 
     app.run(|app_handle, event| {
         if let tauri::RunEvent::Exit = event {
-            // Never leave plugin processes behind after the launcher quits.
             if let Some(host) = app_handle.try_state::<commands::plugins::PluginHost>() {
                 host.shutdown_all();
             }

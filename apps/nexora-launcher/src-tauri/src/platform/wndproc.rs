@@ -1,9 +1,3 @@
-//! Subclass procedure for the settings window.
-//!
-//! Windows opens the system menu for `Alt+Space` before the webview sees it, so
-//! the shortcut recorder would never get the combination. The subclass turns
-//! those messages into a `shortcut-captured` event instead.
-
 use std::sync::atomic::{AtomicIsize, Ordering};
 
 use tauri::{Emitter, Manager};
@@ -64,7 +58,6 @@ unsafe extern "system" fn settings_wndproc(
     }
 }
 
-/// Installs the subclass on the settings window (once, at startup).
 pub fn install(app: &tauri::AppHandle) {
     let Some(settings) = app.get_webview_window(SETTINGS_WINDOW) else {
         return;

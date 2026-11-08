@@ -1,4 +1,3 @@
-//! 只读酷狗本机 KRC，使用客户端原生时间戳，避免跨来源歌词偏移。
 use super::{normalized, parse_krc, romanized, song_identity, Lyrics};
 use std::{
     fs,
@@ -7,7 +6,8 @@ use std::{
 };
 
 const LIMIT: usize = 2 * 1024 * 1024;
-// KRC 的固定替换表与 zlib 格式：https://gist.github.com/zengkid/68c455a860f29f215036be19171f0d6f
+// Reference for the stable KRC substitution table and zlib-wrapped payload:
+// https://gist.github.com/zengkid/68c455a860f29f215036be19171f0d6f
 const KEY: [u8; 16] = [
     0x40, 0x47, 0x61, 0x77, 0x5e, 0x32, 0x74, 0x47, 0x51, 0x36, 0x31, 0x2d, 0xce, 0xd2, 0x6e, 0x69,
 ];
@@ -41,8 +41,6 @@ fn header<'a>(raw: &'a str, key: &str) -> Option<&'a str> {
         .map(str::trim)
 }
 
-/// 去掉标题末尾括号里的译名或别名：「ANGEL (天使)」→「ANGEL」。
-/// 括号里是版本信息（Live、Remix、伴奏、现场等）时保留，避免把其他版本的歌词当成原版。
 fn without_alias(title: &str) -> &str {
     static ALIAS: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     static VERSION: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
@@ -63,7 +61,6 @@ fn select(raw: &str, title: &str, artist: &str, duration: f64) -> Option<Lyrics>
     if !lyrics.synced {
         return None;
     }
-    // 文件名已经严格匹配完整歌手与歌名；头部可能为空，合唱也可能只标主歌手。
     if header(raw, "ti")
         .filter(|s| !s.is_empty())
         .is_some_and(|s| {
@@ -72,7 +69,6 @@ fn select(raw: &str, title: &str, artist: &str, duration: f64) -> Option<Lyrics>
                     != song_identity(without_alias(title), artist).0
         })
     {
-        // 酷狗头部可能保留旧别名；仅在正文开头的完整歌名和歌手也吻合时接受。
         let credit = normalized(&format!("{title} - {artist}"));
         if !lyrics
             .lines
@@ -96,7 +92,6 @@ fn select(raw: &str, title: &str, artist: &str, duration: f64) -> Option<Lyrics>
             }
         }
     }
-    // 文件自身的校准量属于原生时间轴，用户的提前量仍由界面单独应用。
     let offset = header(raw, "offset")
         .and_then(|s| s.parse::<i32>().ok())
         .unwrap_or_default() as f32
@@ -111,7 +106,9 @@ fn directory_from_ini(bytes: &[u8]) -> Option<PathBuf> {
     let text = if let Some(bytes) = bytes.strip_prefix(&[0xff, 0xfe]) {
         String::from_utf16(
             &bytes
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|b| u16::from_le_bytes([b[0], b[1]]))
                 .collect::<Vec<_>>(),
         )
@@ -156,7 +153,7 @@ fn read_directory(root: &Path, title: &str, artist: &str, duration: f64) -> Opti
             ))
         })
         .collect::<Vec<_>>();
-    files.sort_by(|a, b| b.0.cmp(&a.0));
+    files.sort_by_key(|entry| std::cmp::Reverse(entry.0));
     let mut fallback = None;
     let mut transliterated = None;
     for (_, name, singer, path) in files {
@@ -175,14 +172,12 @@ fn read_directory(root: &Path, title: &str, artist: &str, duration: f64) -> Opti
         let Some(candidate) = select(&raw, &name, &singer, duration) else {
             continue;
         };
-        // 同一首歌可能缓存过多份歌词：正文是罗马音的那份只作备选，优先用原文。
         if romanized(title, &candidate) {
             if transliterated.is_none() {
                 transliterated = Some(candidate);
             }
             continue;
         }
-        // 时长明确匹配的缓存优先；没有时长信息时才沿用最新的兼容缓存。
         if duration <= 0.0
             || header(&raw, "total")
                 .and_then(|s| s.parse::<u32>().ok())
@@ -225,7 +220,6 @@ pub fn read(title: &str, artist: &str, duration: f64) -> Option<Lyrics> {
 mod tests {
     #[test]
     fn translated_alias_in_the_lyric_header_still_matches_but_versions_do_not() {
-        // 酷狗实际缓存：文件名为「尹美莱、Tiger JK、Bizzy - Angel」，头部标题带中文译名。
         let krc = |ti: &str| {
             format!("[ar:尹美莱/Tiger JK/Bizzy]\n[ti:{ti}]\n[total:0]\n[offset:0]\n[819,3016]<0,328,0>ANGEL (天使) - 尹美莱/Tiger JK/Bizzy\n[15670,1288]<0,205,0>You will always be my\n[20000,1500]<0,300,0>넌 나의 ANGEL")
         };

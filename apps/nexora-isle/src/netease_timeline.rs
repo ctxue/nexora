@@ -1,4 +1,3 @@
-//! 网易云、酷狗未上报系统时间轴时，读取已验证版本的只读播放时间。
 use std::ffi::c_void;
 type Handle = *mut c_void;
 #[link(name = "kernel32")]
@@ -76,7 +75,6 @@ fn kugou_rejects_invalid_positions() {
     }
 }
 
-/// 已找到的进程与模块基址；每轮只需读几个字节，不再枚举全部进程和模块。
 #[derive(Clone, Copy)]
 struct Found {
     pid: u32,
@@ -96,7 +94,6 @@ static SLOTS: std::sync::Mutex<[Slot; 2]> = std::sync::Mutex::new([
         missed: None,
     },
 ]);
-/// 没找到（未运行或版本不匹配）时，重新枚举的最短间隔。
 const REDISCOVER: std::time::Duration = std::time::Duration::from_secs(3);
 
 fn target(kugou: bool) -> (&'static str, &'static str, u32, u32, usize) {
@@ -138,14 +135,12 @@ fn query(kugou: bool) -> Option<(f64, f64)> {
     }
 }
 
-/// 外层 None 表示进程或模块已失效，需要重新查找；内层 None 只是本轮读数无效。
 fn sample(kugou: bool, found: Found) -> Option<Option<(f64, f64)>> {
     let (process, _, stamp, image_size, position_offset) = target(kugou);
     let p = Process(unsafe { OpenProcess(0x410, 0, found.pid) });
     if p.0.is_null() {
         return None;
     }
-    // 进程号可能被复用：每轮都核对进程名与 PE 标识（只读几个字节）。
     if !name(p.0, 0).eq_ignore_ascii_case(process) {
         return None;
     }
@@ -212,7 +207,8 @@ fn discover(kugou: bool) -> Option<Found> {
             if pe > 4096 {
                 return None;
             }
-            // 仅使用本机验证过的 PE 时间戳与映像大小，其他版本安全回退。
+            // Match only PE timestamp and image size for known builds; unknown
+            // versions fall back before reading version-specific layout data.
             if u32::from_le_bytes(read::<4>(p.0, base + pe + 8)?) != stamp
                 || u32::from_le_bytes(read::<4>(p.0, base + pe + 80)?) != image_size
             {

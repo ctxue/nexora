@@ -1,5 +1,7 @@
-//! Four retained pages: music, Pocket, clipboard, and mail.
-//! 坐标全部是面板局部逻辑点（419×140），文字 y 是基线。
+//! Island page renderers.
+//!
+//! Page coordinates are top-panel logical coordinates; individual renderers
+//! translate them onto the active `Card` canvas.
 
 use crate::anim::{lerp, smoothstep, Spring};
 use crate::app::{App, Cmd, Env, CONTENT_LEFT, CONTENT_RIGHT, CONTENT_WIDTH};
@@ -11,11 +13,9 @@ use crate::smtc::Transport;
 use crate::theme::{self, size, W};
 use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
 
-/// 剪贴板分栏一屏显示的条数。
 pub(crate) const CLIP_ROWS: usize = 5;
 pub(crate) const IMAGE_COLS: usize = 5;
 pub(crate) const MAIL_ROWS: usize = 5;
-const IMAGE_PREVIEW_MAX: Vec2 = Vec2::new(330.0, 128.0);
 const IMAGE_VIEW_MAX: Vec2 = Vec2::new(520.0, 190.0);
 
 pub(crate) fn wrapped_image_index(current: usize, count: usize, delta: isize) -> usize {
@@ -37,6 +37,14 @@ fn image_view_size(width: u32, height: u32) -> Vec2 {
     source * scale
 }
 
+fn image_save_name(item: &crate::clipboard::ImageClip) -> String {
+    format!(
+        "岛屿图片-{}-{}.png",
+        item.at.replace(':', "-"),
+        item.id.get(..8).unwrap_or(&item.id)
+    )
+}
+
 fn thumbnail_window_start(selected: usize, total: usize, visible: usize) -> usize {
     if total == 0 || visible == 0 {
         return 0;
@@ -56,7 +64,7 @@ fn image_viewer_wraps_between_the_first_and_last_image() {
 
 #[test]
 fn image_viewer_keeps_the_source_aspect_ratio_inside_its_bounds() {
-    assert!(IMAGE_VIEW_MAX.y >= 180.0);
+    const { assert!(IMAGE_VIEW_MAX.y >= 180.0) };
     let landscape = image_view_size(1600, 900);
     assert!((landscape.x / landscape.y - 1600.0 / 900.0).abs() < 0.001);
     assert!(landscape.x <= IMAGE_VIEW_MAX.x && landscape.y <= IMAGE_VIEW_MAX.y);
@@ -103,57 +111,6 @@ fn draw_texture_fit(c: &Card, texture: &egui::TextureHandle, rect: Rect, radius:
     );
 }
 
-fn image_preview_size(width: u32, height: u32) -> Vec2 {
-    if width == 0 || height == 0 {
-        return Vec2::ZERO;
-    }
-    let source = Vec2::new(width as f32, height as f32);
-    let scale = (IMAGE_PREVIEW_MAX.x / source.x)
-        .min(IMAGE_PREVIEW_MAX.y / source.y)
-        .min(1.0);
-    source * scale
-}
-
-fn draw_image_preview(
-    c: &Card,
-    texture: &egui::TextureHandle,
-    item: &crate::clipboard::ImageClip,
-    anchor_x: f32,
-    viewport_width: f32,
-) -> Option<Rect> {
-    let size = image_preview_size(item.width, item.height);
-    if size.x <= 0.0 || size.y <= 0.0 {
-        return None;
-    }
-    let center_x = anchor_x.clamp(size.x / 2.0 + 12.0, viewport_width - size.x / 2.0 - 12.0);
-    let top = 146.0;
-    let screen_rect = c.rect(center_x - size.x / 2.0, top, size.x, size.y);
-    let layer = egui::LayerId::new(
-        egui::Order::Foreground,
-        egui::Id::new(("clipboard-image-preview", item.id.as_str())),
-    );
-    let clip = screen_rect.expand(2.0).intersect(c.ui.ctx().screen_rect());
-    let painter = c.ui.ctx().layer_painter(layer).with_clip_rect(clip);
-    let preview = Card::on_painter(c.ui, painter, c.origin, clip);
-    draw_texture_fit(&preview, texture, screen_rect, 0.0);
-    Some(screen_rect.expand(2.0))
-}
-
-#[test]
-fn image_preview_keeps_the_source_aspect_ratio_within_screen_bounds() {
-    let landscape = image_preview_size(692, 292);
-    assert!((landscape.x / landscape.y - 692.0 / 292.0).abs() < 0.001);
-    assert!(landscape.x <= IMAGE_PREVIEW_MAX.x && landscape.y <= IMAGE_PREVIEW_MAX.y);
-
-    let portrait = image_preview_size(600, 1200);
-    assert!((portrait.x / portrait.y - 0.5).abs() < 0.001);
-    assert!(portrait.x <= IMAGE_PREVIEW_MAX.x && portrait.y <= IMAGE_PREVIEW_MAX.y);
-
-    assert_eq!(image_preview_size(120, 80), Vec2::new(120.0, 80.0));
-    assert_eq!(image_preview_size(0, 80), Vec2::ZERO);
-}
-
-/// 由标题生成稳定的封面渐变色。
 fn cover_colors(title: &str) -> (Color32, Color32) {
     let mut h: u64 = 1469598103934665603;
     for b in title.bytes() {
@@ -185,7 +142,6 @@ fn cover_colors(title: &str) -> (Color32, Color32) {
 }
 
 impl App {
-    // ================= 视频 =================
     pub(crate) fn page_video(&mut self, c: &Card, _env: &Env, cmds: &mut Vec<Cmd>) {
         let language = self.settings.language;
         let np = self.video.clone();
@@ -291,7 +247,6 @@ impl App {
         }
     }
 
-    // ================= 音乐 =================
     pub(crate) fn page_music(&mut self, c: &Card, _env: &Env, cmds: &mut Vec<Cmd>) {
         let language = self.settings.language;
         let np = self.media.clone();
@@ -559,7 +514,6 @@ impl App {
                 self.settings.save();
             }
         }
-        // 岛屿歌词是横向的，只在顶部停靠时提供。
         if has && !self.side() {
             let (button, button_card) = capsule(
                 c,
@@ -698,7 +652,6 @@ impl App {
         }
     }
 
-    // ================= 文件口袋 =================
     pub(crate) fn page_shelf(&mut self, c: &Card, _env: &Env, cmds: &mut Vec<Cmd>) {
         let language = self.settings.language;
         let n = self.shelf.items.len();
@@ -797,7 +750,6 @@ impl App {
             let target = center + (i as f32 - scroll - (visible - 1.0) / 2.0) * slot;
             let born = self.shelf_born.get(p).copied();
             let s = self.shelf_x.entry(p.clone()).or_insert_with(|| {
-                // 新放入的从右侧滑进来；启动时已有的直接就位
                 let start = if born.is_some() {
                     target + slot * 0.9
                 } else {
@@ -952,7 +904,6 @@ impl App {
         }
     }
 
-    // ================= 剪贴板（文件口袋第二个分栏） =================
     pub(crate) fn page_clipboard(&mut self, c: &Card, _env: &Env, _cmds: &mut Vec<Cmd>) {
         let language = self.settings.language;
         if !self.settings.clipboard_history {
@@ -1042,7 +993,6 @@ impl App {
             return;
         }
 
-        // 超过一屏时右侧细滚动条，滚轮查看。
         if n > CLIP_ROWS {
             let (top, track) = (38.0, 104.0);
             compact::scrollbar(c, 384.0, top, track, self.clip_first, n - CLIP_ROWS);
@@ -1195,7 +1145,6 @@ impl App {
         }
     }
 
-    // ================= 图片剪贴板 =================
     pub(crate) fn page_images(&mut self, c: &Card, _env: &Env, cmds: &mut Vec<Cmd>) {
         let language = self.settings.language;
         if !self.settings.clipboard_images {
@@ -1238,7 +1187,7 @@ impl App {
             c.text(
                 209.5,
                 119.0,
-                language.text("悬浮预览 · 点击打开", "Hover to preview · Click to open"),
+                language.text("点击打开图片", "Click to open"),
                 size::TINY,
                 W::Regular,
                 theme::GRAY,
@@ -1263,8 +1212,7 @@ impl App {
             };
             c.text(209.5, 121.0, &label, 9.5, W::Regular, theme::DIM, H::Center);
         }
-        let mut hovered = None;
-        let mut action = None;
+        let mut action = None; // 0 查看 1 固定 2 删除 3 另存为
         for (slot, (index, item)) in items
             .iter()
             .enumerate()
@@ -1284,7 +1232,6 @@ impl App {
                     10.0,
                     Color32::from_white_alpha((18.0 * hover) as u8),
                 );
-                hovered = Some((index, item.clone(), x));
             }
             if let Some(texture) = self.image_texture(c, item) {
                 draw_texture_fit(
@@ -1313,15 +1260,15 @@ impl App {
                 language.text("固定图片", "Pin image")
             });
             r.context_menu(|ui| {
-                if ui.button(language.text("打开图片", "Open image")).clicked() {
+                if ui.button(language.text("查看图片", "View image")).clicked() {
                     action = Some((index, 0));
                     ui.close_menu();
                 }
                 if ui
-                    .button(language.text("在文件夹中显示", "Show in folder"))
+                    .button(language.text("另存为 PNG…", "Save as PNG…"))
                     .clicked()
                 {
-                    action = Some((index, 1));
+                    action = Some((index, 3));
                     ui.close_menu();
                 }
                 if ui
@@ -1332,41 +1279,36 @@ impl App {
                     })
                     .clicked()
                 {
-                    action = Some((index, 2));
+                    action = Some((index, 1));
                     ui.close_menu();
                 }
                 if ui
                     .button(language.text("删除记录", "Remove entry"))
                     .clicked()
                 {
-                    action = Some((index, 3));
+                    action = Some((index, 2));
                     ui.close_menu();
                 }
                 self.shelf_menu_rect =
                     Some(egui::Frame::menu(ui.style()).widget_rect(ui.min_rect()));
             });
             if pin.clicked() {
-                action = Some((index, 2));
+                action = Some((index, 1));
             } else if r.clicked() {
                 action = Some((index, 0));
             }
         }
-        if let Some((_, item, anchor_x)) = hovered {
-            if let Some(texture) = self.image_texture(c, &item) {
-                if let Some(rect) = draw_image_preview(c, &texture, &item, anchor_x, 419.0) {
-                    self.image_preview_active = true;
-                    self.image_preview_rect = Some(rect);
-                }
-            }
-        }
         if let Some((index, action)) = action {
-            let Some(item) = items.get(index).cloned() else {
+            if index >= items.len() {
                 return;
-            };
+            }
             match action {
-                0 => cmds.push(Cmd::Open(item.path())),
-                1 => cmds.push(Cmd::Reveal(item.path())),
-                2 => {
+                0 => {
+                    self.image_view_open = true;
+                    self.image_view_index = index;
+                    self.sync_panel_layout();
+                }
+                1 => {
                     if !self.clipboard.lock().toggle_image_pin(index) {
                         self.say(if language.is_en() {
                             format!(
@@ -1378,12 +1320,19 @@ impl App {
                         });
                     }
                 }
+                3 => {
+                    let item = items[index].clone();
+                    cmds.push(Cmd::SaveImageAs {
+                        suggested_name: image_save_name(&item),
+                        png: item.png,
+                    });
+                }
                 _ => self.clipboard.lock().remove_image(index),
             }
         }
     }
 
-    pub(crate) fn page_image_viewer(&mut self, c: &Card, width: f32) {
+    pub(crate) fn page_image_viewer(&mut self, c: &Card, width: f32, cmds: &mut Vec<Cmd>) {
         let language = self.settings.language;
         let items = self.clipboard.lock().images.clone();
         if items.is_empty() {
@@ -1396,6 +1345,19 @@ impl App {
         let selected = items[self.image_view_index].clone();
         let center_x = width / 2.0;
 
+        let image_response = c.hit(54.0, 36.0, width - 108.0, 210.0, "image-view-save");
+        image_response.context_menu(|ui| {
+            if ui
+                .button(language.text("另存为 PNG…", "Save as PNG…"))
+                .clicked()
+            {
+                cmds.push(Cmd::SaveImageAs {
+                    suggested_name: image_save_name(&selected),
+                    png: selected.png.clone(),
+                });
+                ui.close_menu();
+            }
+        });
         if let Some(texture) = self.image_texture(c, &selected) {
             let size = image_view_size(selected.width, selected.height);
             if size.x > 0.0 && size.y > 0.0 {
@@ -1513,8 +1475,8 @@ impl App {
             209.5,
             94.0,
             language.text(
-                "开启后，复制的图片会保存在本机",
-                "Turn it on to keep copied images locally",
+                "仅在本次运行中临时保留，退出后自动清除",
+                "Temporary for this session and cleared when the app exits",
             ),
             size::TINY,
             W::Regular,
@@ -1555,7 +1517,7 @@ impl App {
         if let Some((_, texture)) = self.image_textures.get(&item.id) {
             return Some(texture.clone());
         }
-        let decoded = image::open(item.path()).ok()?;
+        let decoded = image::load_from_memory(item.png.as_slice()).ok()?;
         let preview = decoded.thumbnail(1024, 1024).to_rgba8();
         let image = std::sync::Arc::new(egui::ColorImage::from_rgba_unmultiplied(
             [preview.width() as usize, preview.height() as usize],
@@ -1591,7 +1553,6 @@ impl App {
         }
     }
 
-    /// 拖入遮罩：流动虚线框 + 跟随光标的柔光 + 上下轻跳的托盘图标。
     fn drag_overlay(&self, c: &Card) {
         let language = self.settings.language;
         let (x, y, w, h) = (CONTENT_LEFT, 58.0, CONTENT_WIDTH, 66.0);
@@ -1628,9 +1589,6 @@ impl App {
         );
     }
 
-    // ---------------------------------------------------------------
-    // 邮件：有验证码大卡时分栏，否则显示紧凑单行列表。
-    // ---------------------------------------------------------------
     fn visible_mail_code(&self) -> Option<&mail::Item> {
         self.mail
             .code_item()
@@ -1702,7 +1660,6 @@ impl App {
             return;
         }
 
-        // 点开邮件后整块换成正文摘要，左上「返回」回到列表。
         if let Some((account, uid)) = self.mail.open_uid.clone() {
             match self
                 .mail
@@ -1963,7 +1920,6 @@ impl App {
             );
     }
 
-    /// 岛内邮件详情可滚动，也可以进入独立窗口阅读全文。
     pub(crate) fn mail_detail(&mut self, c: &Card, raw: &mail::Item, cmds: &mut Vec<Cmd>) {
         let language = self.settings.language;
         let hidden = self.mail_code_hidden(raw);
@@ -2066,7 +2022,6 @@ impl App {
         )
         .on_hover_text(&account);
 
-        // 正文和链接共用滚动区域，会议与验证码操作保留在底部。
         let mut content = egui::Ui::new(
             c.ui.ctx().clone(),
             egui::Id::new(("mail-content", &item.account, item.uid, c.live)),
@@ -2125,7 +2080,6 @@ impl App {
                 }
             });
 
-        // Bottom row: verification code and copy affordance.
         c.seg(
             (46.0, 199.0),
             (CONTENT_RIGHT - 6.0, 199.0),

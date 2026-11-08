@@ -1,7 +1,8 @@
-//! 灵动岛主体：状态、悬停形变、切页、顶栏与公共层。与平台无关——
-//! Windows 外壳（`main.rs`）驱动的界面状态与绘制逻辑集中在这里。
+//! Primary NEXORA ISLE application state and frame renderer.
 //!
-//! 时间一律来自 `Env::t`（秒），不直接读系统时钟，所以录屏可逐帧复现。
+//! Frame time is supplied by the shell so animations are deterministic. Panel
+//! geometry, content geometry, notification badges, and hit regions are kept
+//! separate because their animation and clipping rules differ.
 
 use crate::anim::{self, lerp, smoothstep, Spring};
 use crate::bar_layout::{self as bar, Layout};
@@ -18,7 +19,6 @@ use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-// ---------- 几何（逻辑点） ----------
 pub const PW: f32 = 419.0; // 展开面板宽
 pub const IMAGE_VIEW_W: f32 = 600.0; // 图片查看态宽度
 pub const PH: f32 = 160.0; // 展开面板高：顶部标题栏 + 内容区
@@ -36,10 +36,8 @@ pub const RAD: f32 = 33.0; // 底部圆角
 pub const WIN_W: f32 = 640.0; // 窗口（透明画布）
 pub const CANVAS_W: f32 = WIN_W + 320.0; // 保留右侧通知及阴影的完整空间，原岛仍按 WIN_W 定位。
 pub const WIN_H: f32 = 390.0;
-/// 胶囊岛体与屏幕顶边的间隙。
 pub const PILL_GAP: f32 = 6.0;
 
-/// 胶囊的柔和投影：四周都有，多层叠加近似高斯。
 fn pill_shadow(painter: &egui::Painter, rect: Rect, radius: f32, strength: f32) {
     if strength <= 0.01 {
         return;
@@ -60,22 +58,53 @@ pub(crate) const PAGE_NAMES: [&str; model::page::COUNT] =
     ["音乐", "视频", "监控", "文件口袋", "图片", "剪贴板", "邮箱"];
 const PAGE_SETTINGS_TABS: [usize; model::page::COUNT] = [1, 1, 12, 5, 6, 6, 8];
 
-// ---------- 动效参数 ----------
-/// 悬停意图缓冲：光标停留这么久才真正展开（期间药丸轻微胀大作为反馈），防误触。
 const HOVER_INTENT: f64 = 0.20;
 const MINIMAL_HOVER_INTENT: f64 = 0.40;
-/// 移开后等待多久开始收起；这段时间内回来不会收。
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PointerExpandAction {
+    Keep,
+    Open,
+    Close,
+}
+
+fn pointer_expand_action(
+    expand_on_hover: bool,
+    open: bool,
+    inside: bool,
+    clicked: bool,
+    hover_elapsed: Option<f64>,
+    hover_intent: f64,
+    drag_hot: bool,
+) -> PointerExpandAction {
+    let triggered = if expand_on_hover {
+        hover_elapsed.is_some_and(|elapsed| elapsed >= hover_intent)
+    } else {
+        inside && clicked
+    };
+    if !open && (drag_hot || triggered) {
+        PointerExpandAction::Open
+    } else {
+        PointerExpandAction::Keep
+    }
+}
+
+fn pointer_collapse_action(open: bool, inside: bool) -> PointerExpandAction {
+    if open && !inside {
+        PointerExpandAction::Close
+    } else {
+        PointerExpandAction::Keep
+    }
+}
+
 const LEAVE_DELAY: f64 = 0.12;
 const SWELL: (f32, f32) = (1.075, 1.13);
-// 展开：欠阻尼，末段约 5% 过冲后回落；高度略软于宽度，像「垂落」下来。
 const OPEN_W: (f32, f32) = (330.0, 0.70);
 const OPEN_H: (f32, f32) = (290.0, 0.74);
-// 收起：临界阻尼，约 0.18 s 干净收回，无回弹。
 const CLOSE: (f32, f32) = (620.0, 1.0);
 const SWELL_K: (f32, f32) = (420.0, 0.8);
 
 pub struct Options {
-    /// 是否联网查歌词（录制/测试时关掉）。
     pub fetch_lyrics: bool,
 }
 
@@ -85,30 +114,20 @@ impl Default for Options {
     }
 }
 
-/// 每帧由外壳提供的外部世界。
 #[derive(Clone, Default)]
 pub struct Env {
     pub t: f64,
-    /// `HH:MM:SS`
     pub clock: String,
     pub battery: Option<u8>,
     pub charging: bool,
-    /// 互联网连接状态；未知时不触发表情提醒。
     pub network: Option<bool>,
-    /// 光标位置（与 `frame` 传入的 `win` 同一坐标系）；不在窗口附近时为 None。
     pub cursor: Option<Pos2>,
-    /// 前台浏览器的顶部是否与岛重叠；NEXORA ISLE自身窗口或暂不可读时为 None。
     pub browser_at_top: Option<bool>,
     pub media: NowPlaying,
-    /// 系统主音量（0..100，是否静音），与系统状态双向同步。
     pub volume: Option<(u32, bool)>,
-    /// 已连接的蓝牙音频设备（名称 + 可选电量）。
     pub bt: Vec<crate::bt::Device>,
-    /// 蓝牙服务是否已经完成首次扫描。
     pub bt_ready: bool,
-    /// 岛所在屏幕（与 `win` 同一坐标系，逻辑点）；用于让通知详情留在屏幕内。
     pub screen: Option<Rect>,
-    /// 不支持逐像素透明的兼容后端需要按内容轮廓裁剪窗口。
     pub opaque_surface: bool,
 }
 
@@ -130,7 +149,14 @@ impl Messenger {
     }
 }
 
-/// 一条未读：来源、账号所在进程（QQ 通知分不出账号，记为 0）和发出提醒的窗口（没有时为 0）。
+pub(crate) fn messenger_alerts_enabled(settings: &model::Settings, source: Messenger) -> bool {
+    settings.notifications
+        && match source {
+            Messenger::Wechat => settings.wechat_notifications,
+            Messenger::Qq => settings.qq_notifications,
+        }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Unread {
     pub source: Messenger,
@@ -147,11 +173,9 @@ impl Unread {
     }
 }
 
-/// 展开后未读胶囊的宽度、离面板的间距和每个图标占的高度。
 pub(crate) const UNREAD_W: f32 = 40.0;
 pub(crate) const UNREAD_GAP: f32 = 8.0;
 pub(crate) const UNREAD_SLOT: f32 = 36.0;
-/// 收起时两个来源图标的间距：并排各占一格，不叠放。
 fn unread_step(_horizontal: bool) -> f32 {
     22.0
 }
@@ -383,6 +407,14 @@ fn right_anchored_x(current_width: f32, reference_width: f32, reference_x: f32) 
     current_width + reference_x - reference_width
 }
 
+fn opened_content_width(current_width: f32, target_width: f32, stable: bool) -> f32 {
+    if stable {
+        target_width
+    } else {
+        current_width
+    }
+}
+
 fn resident_music_icon_visible(
     lyrics_active: bool,
     has_music: bool,
@@ -484,7 +516,6 @@ pub(crate) fn centered_decorated_viewport_position(
     centered_viewport_position(ctx, inner + Vec2::new(16.0, 39.0))
 }
 
-/// 交给外壳执行的副作用。
 #[derive(Clone, Debug, PartialEq)]
 pub enum Cmd {
     Media(Transport),
@@ -501,29 +532,25 @@ pub enum Cmd {
     ToggleAutostart,
     AddFiles,
     DragFile(PathBuf),
-    /// 把系统主音量设为 0..100。
+    SaveImageAs {
+        suggested_name: String,
+        png: std::sync::Arc<Vec<u8>>,
+    },
     SetVolume(u32),
-    /// 切换系统静音。
     ToggleMute,
-    /// 账号清单变化后，让外壳重新同步收信线程。
     MailSync,
-    /// 测试某个邮箱的连接（授权码只在内存里传给工作线程）。
     MailTest(mail::Account, String),
 }
 
-/// 不支持逐像素透明时，原生窗口裁剪区域仍贴合岛体轮廓而不是外接矩形。
 #[derive(Clone, Debug, PartialEq)]
 pub enum WindowShape {
-    /// 任意闭合轮廓。
     Outline(Vec<Pos2>),
-    /// 岛体 / 通知胶囊：顶部外翻肩部 + 竖直侧边 + 底部圆角（参数同 `shape::fill`）。
     Notch {
         rect: Rect,
         flare: f32,
         flare_h: f32,
         radius: f32,
     },
-    /// 停靠在左右边缘的岛体：肩部沿屏幕边缘展开（参数同 `shape::fill_docked`）。
     Docked {
         rect: Rect,
         dock: model::Dock,
@@ -531,12 +558,10 @@ pub enum WindowShape {
         flare_h: f32,
         radius: f32,
     },
-    /// 圆角矩形（通知详情、提示、浮动确认）。
     Round(Rect, f32),
 }
 
 impl WindowShape {
-    /// 闭合轮廓（逻辑点）；窗口区域按它裁剪。
     pub fn outline(&self) -> Vec<Pos2> {
         match self {
             Self::Outline(points) => points.clone(),
@@ -559,31 +584,21 @@ impl WindowShape {
 }
 
 pub struct FrameOut {
-    /// 原生窗口应保留的可见区域（相对 `win` 左上角）。
     pub region: Rect,
-    /// Shape outline used by backends without per-pixel alpha composition.
     pub window_shape: Option<Vec<WindowShape>>,
-    /// 鼠标命中区（相对 `win` 左上角），区域外点击穿透到下层窗口。
     pub hit: Rect,
     pub notice_hit: Option<Rect>,
-    /// 文件拖入感应区；独立于普通鼠标命中区。
     pub file_drop_zone: Option<Rect>,
-    /// 展开状态立即生效，不等待展开动画结束。
     pub expanded: bool,
     pub editing: bool,
     pub animating: bool,
-    /// Reassert the native topmost position while a floating image preview is
-    /// active; another topmost tool window may appear after expansion.
-    pub raise_window: bool,
     pub repaint_after: std::time::Duration,
     pub cmds: Vec<Cmd>,
 }
 
-/// 本地歌词（酷狗、汽水）每 5 秒复查，最多约 1 分钟；网络失败每 30 秒重试，最多约 5 分钟。手动点重试会重新计数。
 const NATIVE_RETRIES: u32 = 12;
 const NETWORK_RETRIES: u32 = 10;
 
-/// 与 `format!("{title}|{artist}|{duration:.0}")` 等价，但不分配内存：界面每帧要比较好几次。
 fn lyric_key_matches(key: &str, media: &NowPlaying) -> bool {
     use std::io::Write;
     let Some(rest) = key
@@ -671,6 +686,61 @@ fn right_anchored_icons_keep_their_inset_as_the_island_expands() {
 }
 
 #[test]
+fn opened_content_uses_the_final_axis_from_the_first_animation_frame() {
+    assert_eq!(opened_content_width(BAR_W, PW, true), PW);
+    assert_eq!(opened_content_width(PW * 1.05, PW, true), PW);
+    assert_eq!(opened_content_width(BAR_W, PW, false), BAR_W);
+}
+
+#[test]
+fn click_mode_expands_only_after_a_click_while_hover_mode_keeps_the_old_timing() {
+    assert_eq!(
+        pointer_expand_action(false, false, true, false, Some(2.0), HOVER_INTENT, false,),
+        PointerExpandAction::Keep
+    );
+    assert_eq!(
+        pointer_expand_action(false, false, true, true, Some(0.0), HOVER_INTENT, false,),
+        PointerExpandAction::Open
+    );
+    assert_eq!(
+        pointer_expand_action(true, false, true, false, Some(0.19), HOVER_INTENT, false,),
+        PointerExpandAction::Keep
+    );
+    assert_eq!(
+        pointer_expand_action(true, false, true, false, Some(0.20), HOVER_INTENT, false,),
+        PointerExpandAction::Open
+    );
+}
+
+#[test]
+fn leaving_island_closes_immediately_regardless_of_open_mode() {
+    assert_eq!(
+        pointer_collapse_action(true, false),
+        PointerExpandAction::Close
+    );
+    assert_eq!(
+        pointer_collapse_action(true, false),
+        PointerExpandAction::Close
+    );
+    assert_eq!(
+        pointer_collapse_action(true, true),
+        PointerExpandAction::Keep
+    );
+}
+
+#[test]
+fn wechat_and_qq_alerts_have_independent_switches() {
+    let mut settings = model::Settings::default();
+    assert!(messenger_alerts_enabled(&settings, Messenger::Wechat));
+    assert!(messenger_alerts_enabled(&settings, Messenger::Qq));
+    settings.wechat_notifications = false;
+    assert!(!messenger_alerts_enabled(&settings, Messenger::Wechat));
+    assert!(messenger_alerts_enabled(&settings, Messenger::Qq));
+    settings.notifications = false;
+    assert!(!messenger_alerts_enabled(&settings, Messenger::Qq));
+}
+
+#[test]
 fn lyrics_header_owns_the_only_music_icon_during_transition() {
     assert!(!resident_music_icon_visible(true, true, 0.2, true));
     assert!(!resident_music_icon_visible(true, true, 0.0, true));
@@ -719,29 +789,22 @@ pub(crate) struct LyricsState {
     pub loading: bool,
     pub error: Option<lyrics::FetchError>,
     pub retry_at: Option<f64>,
-    /// 发起本次查询时已知的歌曲 ID；之后才拿到 ID 且还没有同步歌词时，按 ID 再查一次。
     pub song_id: Option<u64>,
-    /// 同一首歌已自动重试的次数；达到上限后停止，避免整首歌期间反复读盘或联网。
     pub attempts: u32,
     pub lyrics: Option<lyrics::Lyrics>,
     pub rx: Option<std::sync::mpsc::Receiver<Result<(lyrics::Lyrics, bool), lyrics::FetchError>>>,
     pub native_rx: Option<std::sync::mpsc::Receiver<Option<lyrics::Lyrics>>>,
 }
 
-/// 邮件面板与设置表单的界面状态。正文只在内存里处理，不落盘。
 #[derive(Default)]
 pub(crate) struct MailState {
     pub privacy: crate::mail_privacy::Privacy,
     pub accounts: Vec<mail::Account>,
-    /// 每个账号的连接状态，键是邮箱小写。
     pub status: HashMap<String, mail::Status>,
-    /// 最近邮件，新的在前，最多 60 封。
     pub recent: Vec<mail::Item>,
-    /// 设置页里「测试连接」的结果。
     pub note: String,
     pub testing: Option<String>,
     pub form: MailForm,
-    /// 面板里点开的邮件（账号 + uid，避免两个账号 uid 撞车）。
     pub open_uid: Option<(String, u32)>,
     pub reading: Option<mail::Item>,
     pub reader_focus: bool,
@@ -757,7 +820,6 @@ pub(crate) struct MailForm {
 }
 
 impl MailState {
-    /// 最近一封带验证码的邮件。
     pub fn code_item(&self) -> Option<&mail::Item> {
         self.recent.iter().find(|m| m.code.is_some())
     }
@@ -774,17 +836,14 @@ pub struct App {
     pub settings: model::Settings,
     pub(crate) shelf: model::Shelf,
 
-    // 形变
     pub(crate) w: Spring,
     pub(crate) h: Spring,
     pub(crate) open: bool,
     hover_since: Option<f64>,
     leave_since: Option<f64>,
-    /// 前台切换导致的强制收起：光标离开前不再自动展开。
     pub hover_lock: bool,
     pub(crate) reveal: f32,
 
-    // 切页
     pub(crate) page: usize,
     page_from: usize,
     page_t0: f64,
@@ -793,12 +852,10 @@ pub struct App {
     wheel_at: f64,
     wheel_page_at: f64,
 
-    // 拖入
     pub(crate) drag_hot: bool,
     pub(crate) drag_a: f32,
     drag_saved: Option<usize>,
 
-    // 文件口袋
     pub(crate) shelf_scroll: Spring,
     pub(crate) shelf_first: usize,
     pub(crate) shelf_menu_rect: Option<Rect>,
@@ -814,9 +871,6 @@ pub struct App {
     pub(crate) image_view_index: usize,
     pub(crate) image_textures:
         HashMap<String, (std::sync::Arc<egui::ColorImage>, egui::TextureHandle)>,
-    pub(crate) image_preview_active: bool,
-    pub(crate) image_preview_rect: Option<Rect>,
-    image_preview_raise_at: f64,
     pub(crate) clip_confirm_clear: Option<f64>,
     last_clipboard_version: u64,
     last_clipboard_count: usize,
@@ -829,7 +883,6 @@ pub struct App {
     pub(crate) monitor_events: std::collections::VecDeque<crate::monitor::MonitorEvent>,
     monitor_alert_state: crate::monitor::AlertState,
 
-    // 音乐
     pub(crate) ly: LyricsState,
     pub(crate) ly_worker: Option<std::thread::JoinHandle<()>>,
     pub(crate) show_lyrics: bool,
@@ -864,7 +917,6 @@ pub struct App {
     pub(crate) history: std::collections::VecDeque<Alert>,
     pub(crate) pending: Vec<Cmd>,
     pub(crate) pet: crate::pet::Pet,
-    // 其它
     toast: Option<(String, f64)>,
     last_cursor: Option<Pos2>,
     pet_a: f32,
@@ -873,16 +925,11 @@ pub struct App {
     pub(crate) dt: f32,
     pub(crate) cursor_local: Option<Pos2>,
     started: bool,
-    /// 音量条展示值，拖动时先用本地值，随后跟上系统回报。
     pub(crate) volume_ui: Option<(u32, bool)>,
-    /// 拖动/滚轮刚改过音量，这段时间内系统回声不再单独弹一条。
     pub(crate) volume_quiet_until: f64,
-    /// 音量条填充的缓动量（0..1），让数值变化有「量感」。
     pub(crate) volume_a: f32,
-    /// 上一次看到的蓝牙设备，用来只在连接/断开时提示一次。
     pub(crate) bt_shown: Vec<crate::bt::Device>,
     bt_initialized: bool,
-    /// 邮件账号、最近邮件与设置表单。
     pub(crate) mail: MailState,
     pub(crate) updates: crate::updates::State,
     pub(crate) resident: bar::Motion,
@@ -964,9 +1011,6 @@ impl App {
             image_view_open: false,
             image_view_index: 0,
             image_textures: HashMap::new(),
-            image_preview_active: false,
-            image_preview_rect: None,
-            image_preview_raise_at: -10.0,
             clip_confirm_clear: None,
             last_clipboard_version,
             last_clipboard_count,
@@ -1071,7 +1115,6 @@ impl App {
         safe
     }
 
-    /// 收信服务推来的事件；历史邮件静默，新邮件进入通知队列。
     pub fn mail_event(&mut self, ev: mail::Event) {
         let watching = |email: &str| {
             self.mail
@@ -1153,7 +1196,6 @@ impl App {
         }
     }
 
-    /// One immutable system-monitor sample from the sampler thread.
     pub fn monitor_snapshot(&mut self, snapshot: crate::monitor::Snapshot) {
         self.monitor_history.push(snapshot.sample.clone());
         if self.settings.monitor_alerts && self.settings.monitor_enabled {
@@ -1218,24 +1260,20 @@ impl App {
         self.monitor_latest = snapshot;
     }
 
-    /// 设置窗口第 8 个标签页：邮件。
     pub fn open_mail_settings(&mut self) {
         self.settings_tab = 8;
         self.open_settings();
     }
 
-    /// 外壳同步收信线程时读账号清单（不含任何凭据）。
     pub fn mail_accounts(&self) -> &[mail::Account] {
         &self.mail.accounts
     }
 
-    /// 账号增删或开关变化后：落盘并让外壳重新对齐收信线程。
     pub(crate) fn mail_accounts_changed(&mut self) -> Result<(), String> {
         mail::save_accounts(&self.mail.accounts)?;
         self.pending.push(Cmd::MailSync);
         Ok(())
     }
-    /// 把系统音量与蓝牙设备状态同步进界面，只在连接或断开时提示一次。
     fn sync_device(&mut self, env: &Env) {
         if self.t >= self.volume_quiet_until {
             if let Some(v) = env.volume {
@@ -1258,7 +1296,6 @@ impl App {
         if !env.bt_ready {
             return;
         }
-        // 只把首次完整扫描作为基线，之后的连接变化都应提示。
         if !self.bt_initialized {
             self.bt_initialized = true;
             self.bt_shown = env.bt.clone();
@@ -1315,6 +1352,9 @@ impl App {
     }
     pub fn page(&self) -> usize {
         self.page
+    }
+    pub fn notice_visible(&self) -> bool {
+        self.notice.is_some()
     }
 
     pub(crate) fn page_available(&self, page: usize) -> bool {
@@ -1403,7 +1443,6 @@ impl App {
         self.hover_lock = true;
     }
 
-    /// 带过渡地切到某页。`dir` > 0 表示内容从右侧进入。
     pub(crate) fn go(&mut self, page: usize, _dir: f32) {
         if page == self.page || !self.settings.visible_pages[page] {
             return;
@@ -1411,7 +1450,6 @@ impl App {
         let was_viewer = self.image_view_open;
         self.image_view_open = false;
         self.image_view_index = 0;
-        // 连点：上一段过渡还没结束时，以当前页为起点重新开始，位移速度保留。
         self.page_from = self.page;
         self.page = page;
         self.page_t0 = self.t;
@@ -1457,7 +1495,6 @@ impl App {
             })
     }
 
-    /// 换句、分段和展开高亮共用时间调整；正数延后，负数提前。
     pub(crate) fn lyric_position(&self) -> f32 {
         (self.media.position - self.settings.lyric_delay_ms as f64 / 1000.0) as f32
     }
@@ -1528,7 +1565,6 @@ impl App {
             } else {
                 0.0
             };
-            // 按当前句的时间范围与各段字数切换，暂停和跳转直接跟随播放位置。
             let total: usize = galley.rows.iter().map(|row| row.glyphs.len()).sum();
             let mut count = 0;
             let page = galley
@@ -1555,8 +1591,6 @@ impl App {
     pub(crate) fn pet_enabled(&self) -> bool {
         self.settings.pet && !self.effective_minimal() && !self.side()
     }
-    /// Minimal mode owns the whole opening transition; battery, clock and NOMI
-    /// must not leak through while the hairline is morphing into the panel.
     pub(crate) fn resident_decoration_visible(&self) -> bool {
         !self.effective_minimal()
     }
@@ -1585,6 +1619,8 @@ impl App {
         self.settings.pet = enabled;
         if enabled {
             self.settings.minimal = false;
+        } else if !self.settings.minimal {
+            self.settings.minimal = true;
         }
         self.settings.save();
     }
@@ -1592,6 +1628,8 @@ impl App {
         self.settings.minimal = enabled;
         if enabled {
             self.settings.pet = false;
+        } else if !self.settings.pet {
+            self.settings.pet = true;
         }
         self.settings.save();
     }
@@ -1603,7 +1641,6 @@ impl App {
             }
         }
         if self.side() {
-            // 左右停靠：竖向胶囊（通知仍是贴边滑出的横向卡片，见上）。
             return self.side_base_size(
                 self.effective_minimal()
                     && self.t >= self.notification_bell_until
@@ -1619,10 +1656,8 @@ impl App {
         }
     }
 
-    /// 0 = 药丸，1 = 完整面板（展开时可略超过 1）。
     pub fn progress(&self) -> f32 {
         let (bw, bh) = self.base_size();
-        // 左右停靠时面板沿水平方向从边缘滑出，用宽度衡量展开程度。
         if self.side() {
             return (self.w.pos - bw) / (self.panel_width() - bw).max(1.0);
         }
@@ -1630,9 +1665,9 @@ impl App {
     }
 
     pub(crate) fn expanded_height(&self) -> f32 {
-        if self.page == model::page::MAIL && self.mail.open_uid.is_some() {
-            236.0 + NAV_ZONE
-        } else if self.page == model::page::MONITOR {
+        if (self.page == model::page::MAIL && self.mail.open_uid.is_some())
+            || self.page == model::page::MONITOR
+        {
             236.0 + NAV_ZONE
         } else if self.page == model::page::CLIPBOARD {
             154.0 + NAV_ZONE
@@ -1662,9 +1697,27 @@ impl App {
         self.h.target = self.expanded_height();
     }
 
-    // ---------------------------------------------------------------
-    // 每帧入口
-    // ---------------------------------------------------------------
+    pub(crate) fn animated_content_origin(&self, win: Rect) -> Pos2 {
+        self.island_rect(
+            win,
+            self.content_layout_width(),
+            opened_content_width(
+                self.h.pos,
+                self.expanded_height(),
+                self.open || self.reveal > 0.0,
+            ),
+        )
+        .min
+    }
+
+    pub(crate) fn content_layout_width(&self) -> f32 {
+        opened_content_width(
+            self.w.pos,
+            self.panel_width(),
+            self.open || self.reveal > 0.0,
+        )
+    }
+
     pub fn frame(&mut self, ui: &mut egui::Ui, win: Rect, env: &Env) -> FrameOut {
         let ctx = ui.ctx().clone();
         let dt = match self.last_t {
@@ -1698,8 +1751,6 @@ impl App {
         let mut cmds = Vec::new();
 
         self.tick(dt, elapsed);
-        self.image_preview_active = false;
-        self.image_preview_rect = None;
         self.sync_device(env);
         self.tick_alerts();
         let hud_active = self.notice.clone();
@@ -1774,13 +1825,11 @@ impl App {
         self.update_island_lyric_layout(&ctx);
 
         let cx = win.center().x;
-        // 胶囊岛体悬浮在屏幕顶边下方。
         let pill = self.settings.island_shape == model::IslandShape::Pill;
         let top = win.top() + if pill { PILL_GAP } else { 0.0 };
         let side = self.side();
         let dock = self.dock();
 
-        // ---------- 输入：拖放 ----------
         let (hovering_files, dropped) = ctx.input(|i| {
             (
                 self.settings.visible_pages[model::page::SHELF] && !i.raw.hovered_files.is_empty(),
@@ -1809,7 +1858,6 @@ impl App {
                 );
             }
         } else if !hovering_files && self.drag_hot {
-            // 拖到外面松手 / 取消：安静地退回原页
             self.drag_hot = false;
             if let Some(p) = self.drag_saved.take() {
                 self.go(p, if p < model::page::SHELF { -1.0 } else { 1.0 });
@@ -1817,7 +1865,6 @@ impl App {
         }
         self.drag_a = anim::approach(self.drag_a, if self.drag_hot { 1.0 } else { 0.0 }, 16.0, dt);
 
-        // ---------- 输入：悬停 ----------
         let p_prev = self.progress();
         let hit = if side {
             self.side_hit_rect(win, p_prev)
@@ -1873,7 +1920,7 @@ impl App {
                     self.navigate_page(right);
                 }
             } else if scroll != 0.0 && !self.image_view_open {
-                let cursor = env.cursor.unwrap() - self.content_origin(win).to_vec2();
+                let cursor = env.cursor.unwrap() - self.animated_content_origin(win).to_vec2();
                 let mail_body = self.page == model::page::MAIL
                     && self.mail.open_uid.is_some()
                     && Rect::from_min_max(Pos2::new(46.0, 104.0), Pos2::new(374.0, 194.0))
@@ -1885,7 +1932,6 @@ impl App {
                 if mail_body || mail_list {
                     self.wheel_delta = 0.0;
                 } else {
-                    // 累积高精度滚轮的小幅输入；停顿或反向时丢弃上一段余量。
                     if self.t - self.wheel_at > 0.18 || self.wheel_delta * scroll < 0.0 {
                         self.wheel_delta = 0.0;
                     }
@@ -1936,7 +1982,6 @@ impl App {
                             *first = target;
                             changed
                         });
-                        // 内容溢出时滚动列表并停在边界；未溢出时滚轮翻页。
                         if !scrolled && !content_scrolls && self.t - self.wheel_page_at >= 0.20 {
                             self.navigate_page(next);
                             self.wheel_page_at = self.t;
@@ -1951,8 +1996,46 @@ impl App {
         } else {
             self.wheel_delta = 0.0;
         }
+        let clicked = ctx.input(|i| i.pointer.primary_clicked());
+        let pointer_eligible =
+            !self.hover_lock && (self.compact_notices() || self.notice.is_none() || self.open);
+        let hover_elapsed = self.hover_since.map(|since| (env.t - since).max(0.0));
+        let intent = if self.effective_minimal() {
+            MINIMAL_HOVER_INTENT
+        } else {
+            HOVER_INTENT
+        };
+        let expand_action = pointer_expand_action(
+            self.settings.expand_on_hover,
+            self.open,
+            inside,
+            clicked && pointer_eligible,
+            hover_elapsed,
+            intent,
+            self.drag_hot,
+        );
+        if !self.settings.expand_on_hover && expand_action == PointerExpandAction::Open {
+            self.open = true;
+            self.leave_since = None;
+            self.w.tune(OPEN_W.0, OPEN_W.1);
+            self.h.tune(OPEN_H.0, OPEN_H.1);
+            self.w.target = self.panel_width();
+            self.h.target = self.expanded_height();
+        }
+        let collapse_action = pointer_collapse_action(self.open, inside && !self.hover_lock);
+        if collapse_action == PointerExpandAction::Close {
+            let (bw, bh) = self.base_size();
+            self.open = false;
+            self.leave_since = None;
+            self.hover_since = None;
+            self.w.tune(CLOSE.0, CLOSE.1);
+            self.h.tune(CLOSE.0, CLOSE.1);
+            self.w.target = bw;
+            self.h.target = bh;
+            self.confirm_clear = None;
+        }
         let want = (inside
-            && !self.hover_lock
+            && pointer_eligible
             && (self.compact_notices() || self.notice.is_none() || self.open))
             || self.open && on_notice
             || (self.open && self.t < self.forced_open_until)
@@ -1960,7 +2043,6 @@ impl App {
         self.morph(want, inside, env.t, dt);
         self.update_pet(env, cx);
 
-        // ---------- 绘制 ----------
         let p = self.progress();
         let (w, h) = (self.w.pos, self.h.pos);
         let panel = self.island_rect(win, w, h);
@@ -2026,14 +2108,13 @@ impl App {
         if let Some(r) = notice_rect {
             painter.rect_filled(r, 12.5, Color32::BLACK);
         }
-        // 内容只随形体「揭开」：不缩放，按面板裁剪，到 55% 才开始淡入
         let reveal = if self.open {
             smoothstep(0.50, 0.97, p)
         } else {
             smoothstep(0.55, 0.92, p)
         };
         self.reveal = reveal;
-        let origin = self.content_origin(win);
+        let origin = self.animated_content_origin(win);
         let clip = panel.intersect(win);
         let base = Card::new(ui, origin, clip);
         self.cursor_local = env.cursor.map(|p| base.to_local(p));
@@ -2193,7 +2274,6 @@ impl App {
         let pet_alpha = self.pet_a * (1.0 - smoothstep(0.0, 0.3, pc));
         if pet_alpha > 0.004 && !minimal_pill && self.resident_decoration_visible() {
             let y = (h.min(self.base_size().1) - BAR_H).max(0.0) / 2.0;
-            // 岛屿眼神跟随本体明暗切换。
             let fit = if self.island_lyrics_active() || self.notice.is_some() {
                 1.0
             } else {
@@ -2213,7 +2293,6 @@ impl App {
             let c = if reveal < 0.6 { c.ghost() } else { c };
             self.panel_body(&c, env, &mut cmds);
         }
-        // 所有轻量提醒统一从岛体下方进入屏幕顶部中心。
         let floating_toast = if self.toast.is_some() {
             let toast_top = top + self.h.pos.min(self.expanded_height()) + 8.0;
             self.toast_layer(
@@ -2224,10 +2303,8 @@ impl App {
         } else {
             None
         };
-        // ---------- 输出 ----------
         let rel = |r: Rect| r.translate(-win.min.to_vec2());
         let mut region = if side {
-            // 侧边：面板从边缘滑出，区域包含肩部（沿边缘上下）与外侧阴影，并一直延伸到屏幕边缘。
             let r = if p > 0.02 || self.open {
                 let height = self.expanded_height().max(self.h.pos) * 1.08 + FLARE * 2.0 + 24.0;
                 self.island_rect(win, self.panel_width() + 20.0, height)
@@ -2265,14 +2342,9 @@ impl App {
         if let Some(rect) = notice_details {
             region = region.union(rect.expand(12.0));
         }
-        if let Some(rect) = self.image_preview_rect {
-            region = region.union(rect.expand(8.0));
-        }
-        // 胶囊上方留空的那一小条也要在窗口区域内，阴影才不会被截断。
         if pill && !side {
             region.min.y = region.min.y.min(win.top());
         }
-        // 原生裁剪还需包含悬停提示；只扩大绘制区域，保持桌面点击穿透。
         let mut tooltips = Vec::new();
         ctx.memory(|memory| {
             for layer in memory.areas().visible_layer_ids() {
@@ -2284,8 +2356,6 @@ impl App {
                 }
             }
         });
-        // Backends without per-pixel alpha still need the window clipped to
-        // the island and floating surfaces instead of the full transparent canvas.
         let shape_region = env.opaque_surface.then(|| {
             let outline = |r: Rect, flare: f32, flare_h: f32, radius: f32| {
                 if pill {
@@ -2317,9 +2387,6 @@ impl App {
             if let Some(r) = notice_details {
                 let radius = 10.0;
                 shapes.push(WindowShape::Round(rel(r), radius));
-            }
-            if let Some(r) = self.image_preview_rect {
-                shapes.push(WindowShape::Round(rel(r.expand(4.0)), 12.0));
             }
             if let Some(r) = floating_toast {
                 shapes.push(WindowShape::Round(rel(r), 11.0));
@@ -2356,16 +2423,7 @@ impl App {
                 && (self.open && self.page == model::page::VIDEO
                     || !self.open && !minimal_pill && self.notice.is_none());
         let animating = transitioning || ambient || pet_visible;
-        let raise_window = self.image_preview_active && self.t - self.image_preview_raise_at >= 0.6;
-        if raise_window {
-            self.image_preview_raise_at = self.t;
-        } else if !self.image_preview_active {
-            self.image_preview_raise_at = -10.0;
-        }
-        // 交互形变与跟随鼠标的眼神保持 60 帧，媒体动画保持 30 帧。
-        let repaint_after = std::time::Duration::from_secs_f64(if transitioning {
-            1.0 / 60.0
-        } else if pet_visible {
+        let repaint_after = std::time::Duration::from_secs_f64(if transitioning || pet_visible {
             1.0 / 60.0
         } else if ambient {
             1.0 / 30.0
@@ -2405,7 +2463,6 @@ impl App {
             expanded: self.open,
             editing: false,
             animating,
-            raise_window,
             repaint_after,
             cmds,
         }
@@ -2413,7 +2470,6 @@ impl App {
 
     fn hit_rect(&self, cx: f32, top: f32, p: f32) -> Rect {
         let r = self.hit_rect_base(cx, top, p);
-        // 胶囊离屏幕顶边有一段空隙：把光标推到屏幕最顶端也要能唤出岛。
         if self.settings.island_shape == model::IslandShape::Pill {
             Rect::from_min_max(Pos2::new(r.left(), r.top() - PILL_GAP), r.max)
         } else {
@@ -2447,14 +2503,12 @@ impl App {
         }
     }
 
-    /// 展开后未读胶囊的出现程度：面板基本展开后从面板旁淡入。
     pub(crate) fn messenger_appear(&self) -> f32 {
         smoothstep(0.0, 1.0, anim::clamp01((self.progress() - 0.7) / 0.3))
     }
     fn messenger_stack_appear(&self) -> f32 {
         1.0 - smoothstep(0.04, 0.30, self.progress())
     }
-    /// 同一来源有多个账号时给图标编号（1、2…）；只有一个账号不编号。
     pub(crate) fn unread_tag(&self, i: usize) -> Option<usize> {
         let source = self.pending_messengers.get(i)?.source;
         let same = self
@@ -2476,7 +2530,6 @@ impl App {
             _ => name.to_string(),
         }
     }
-    /// 展开胶囊高度：一个是圆，两个是短胶囊，三个及以上与面板等高（多出的滚动）。
     fn unread_capsule_height(&self, panel_h: f32) -> f32 {
         let n = self.pending_messengers.len();
         if n >= 3 {
@@ -2499,7 +2552,6 @@ impl App {
             UNREAD_SLOT
         }
     }
-    /// 收起时叠放的来源图标（最多两个）。
     fn unread_sources(&self) -> Vec<Messenger> {
         let mut sources = Vec::new();
         for u in &self.pending_messengers {
@@ -2509,7 +2561,6 @@ impl App {
         }
         sources
     }
-    /// 收起时叠放区沿胶囊方向的长度。
     fn unread_stack_len(&self, horizontal: bool) -> f32 {
         let icons = self.unread_sources().len().min(2) as f32;
         32.0 + unread_step(horizontal) * (icons - 1.0)
@@ -2519,7 +2570,6 @@ impl App {
         if self.pending_messengers.is_empty() || self.browser_minimal_active && !self.open {
             return None;
         }
-        // 完整横幅已包含该来源图标。歌词模式和横幅收起后使用常驻入口。
         if !self.open
             && !self.compact_notices()
             && self.pending_messengers.len() == 1
@@ -2531,9 +2581,7 @@ impl App {
         let bounds = self.screen.map_or(win, |screen| screen.intersect(win));
         let appear = self.messenger_appear();
         if appear > 0.02 {
-            // 展开：贴在面板外侧、顶端对齐的竖向胶囊；顶部停靠和左停靠在右边，右停靠在左边。
             let full = self.island_rect(win, self.w.pos, self.h.pos);
-            // 顶部停靠时面板贴着屏幕上沿，胶囊往下让一点，圆顶不会被屏幕边切掉。
             let inset = self.unread_top_inset();
             let height = self.unread_capsule_height(full.height() - inset);
             let left = self.dock() == model::Dock::Right
@@ -2550,7 +2598,6 @@ impl App {
                 Vec2::new(width, height * appear),
             ));
         }
-        // 极简刘海：横幅照常弹出，收起后只留细线，未读不常挂在线条上；展开岛体时在面板旁出现。
         if self.effective_minimal() {
             return None;
         }
@@ -2590,7 +2637,6 @@ impl App {
         ))
     }
 
-    /// 展开后的未读胶囊：每个账号一个图标，点击跳到对应窗口；超过三个时滚轮翻看。
     fn draw_unread_capsule(
         &mut self,
         ctx: &egui::Context,
@@ -2655,7 +2701,6 @@ impl App {
             }
         }
         if max_scroll > 0.0 {
-            // 还有没露出的图标：上下边缘各一条淡淡的指示。
             let ink = paint::alpha(theme::WHITE, 0.35);
             if self.messenger_scroll > 0.5 {
                 c.fill(x - 6.0, 4.0, 12.0, 2.0, 1.0, ink);
@@ -2666,7 +2711,6 @@ impl App {
         }
     }
 
-    /// 收起时的未读入口：每个来源一个图标加小红点（同一来源多个账号合成一个）。只有一条时点它直接跳转，多条时展开面板挑选。
     fn draw_unread_stack(&mut self, c: &Card, horizontal: bool, cmds: &mut Vec<Cmd>) {
         let sources = self.unread_sources();
         let count = self.pending_messengers.len();
@@ -2679,16 +2723,15 @@ impl App {
                 (16.0, 14.0 + step * k as f32)
             }
         };
-        for k in 0..icons {
+        for (k, &source) in sources.iter().take(icons).enumerate() {
             let (x, y) = at(k);
-            let scale = if sources[k] == Messenger::Wechat {
+            let scale = if source == Messenger::Wechat {
                 0.85
             } else {
                 0.92
             };
-            crate::extras::messenger_icon(&c.scaled(x, y, scale), x, y, sources[k]);
+            crate::extras::messenger_icon(&c.scaled(x, y, scale), x, y, source);
         }
-        // 每个来源图标右上角一个小红点，不显示数字。
         for k in 0..icons {
             let (x, y) = at(k);
             c.circle(x + 8.0, y - 7.0, 2.6, Color32::from_rgb(255, 59, 48));
@@ -2726,7 +2769,6 @@ impl App {
             }
         }
     }
-    /// 展开面板，让旁边的未读胶囊露出来。
     pub(crate) fn reveal_unread(&mut self) {
         self.notice = None;
         self.open = true;
@@ -2756,7 +2798,6 @@ impl App {
         Some(TopCenterNoticeLayout::below(win, badge, Vec2::new(width, height)).rect)
     }
 
-    /// 绘制岛体或通知胶囊的本体。
     fn paint_body(
         &self,
         painter: &egui::Painter,
@@ -2796,7 +2837,6 @@ impl App {
         );
     }
 
-    /// 悬停状态机：意图缓冲 → 弹簧展开 → 离开延迟 → 临界阻尼收起；全程可打断。
     fn morph(&mut self, want: bool, inside: bool, t: f64, dt: f32) {
         let (bw, bh) = self.base_size();
         if want {
@@ -2807,21 +2847,21 @@ impl App {
             } else {
                 HOVER_INTENT
             };
-            if !self.open && (self.drag_hot || t - since >= intent) {
+            if !self.open
+                && (self.drag_hot || (self.settings.expand_on_hover && t - since >= intent))
+            {
                 self.open = true;
                 self.w.tune(OPEN_W.0, OPEN_W.1);
                 self.h.tune(OPEN_H.0, OPEN_H.1);
                 self.w.target = self.panel_width();
                 self.h.target = self.expanded_height();
                 if self.drag_hot {
-                    // 拖入不等缓冲，直接给一点初速度，30 ms 内就能看到形变
                     self.w.vel = self.w.vel.max(600.0);
                     self.h.vel = self.h.vel.max(260.0);
                 }
             } else if !self.open {
                 self.w.tune(SWELL_K.0, SWELL_K.1);
                 self.h.tune(SWELL_K.0, SWELL_K.1);
-                // 悬停时轻微胀大：厚度方向胀得多一点（侧边停靠时厚度是宽度）。
                 let (sw, sh) = if self.side() {
                     (SWELL.1, SWELL.0)
                 } else {
@@ -2832,7 +2872,7 @@ impl App {
             }
         } else {
             self.hover_since = None;
-            if self.open {
+            if self.open && self.settings.expand_on_hover {
                 let since = *self.leave_since.get_or_insert(t);
                 if t - since >= LEAVE_DELAY {
                     self.open = false;
@@ -2843,7 +2883,7 @@ impl App {
                     self.h.target = bh;
                     self.confirm_clear = None;
                 }
-            } else {
+            } else if !self.open {
                 self.w.tune(CLOSE.0, CLOSE.1);
                 self.h.tune(CLOSE.0, CLOSE.1);
                 self.w.target = bw;
@@ -2857,7 +2897,6 @@ impl App {
         let (prev_w, prev_h) = (self.w.pos, self.h.pos);
         self.w.step(dt);
         self.h.step(dt);
-        // 仅在从外侧越过目标时收住，扩展提示条时不强制跳到目标宽度。
         if !self.open {
             if prev_w >= bw && self.w.pos < bw {
                 self.w.snap(bw);
@@ -2871,9 +2910,6 @@ impl App {
         }
     }
 
-    // ---------------------------------------------------------------
-    // 顶栏：电池 + 时钟。药丸里的电池与时钟会「飞」到顶栏位置（共享元素过渡）。
-    // ---------------------------------------------------------------
     fn shared_header(&mut self, base: &Card, cx: f32, p: f32, env: &Env) {
         let local_cx = cx - base.origin.x;
         let fit = ((WIN_W - 32.0) / self.resident.target.width).min(1.0);
@@ -2951,7 +2987,6 @@ impl App {
         if !self.resident_decoration_visible() {
             return;
         }
-        // 展开后顶部由页面标题、分页和功能按钮接管，不再显示日期时钟。
         if p > 0.35 {
             return;
         }
@@ -2961,7 +2996,6 @@ impl App {
         let clock = self.settings.clock_text(&env.clock);
         let show_battery = self.settings.show_battery && env.battery.is_some();
 
-        // 顶栏终点布局：[电池][时钟] 作为一组整体居中
         let clock_w = paint::clock_width(base, &clock, size::CLOCK);
         let battery_space = if show_battery { 24.0 } else { 0.0 };
         let battery_gap = if show_battery { 8.0 } else { 0.0 };
@@ -2969,7 +3003,6 @@ impl App {
         let gx = local_cx - group / 2.0 + if show_battery { 6.0 } else { 0.0 };
         let hb = (gx + 8.5, 18.6);
         let hc = gx + battery_space + battery_gap;
-        // 药丸起点布局
         let layout = self.resident.current();
         let pb = (local_cx + layout.x[bar::BATTERY].unwrap_or(0.0), 15.0);
         let pcx = local_cx + layout.x[bar::CLOCK].unwrap()
@@ -2978,7 +3011,6 @@ impl App {
         if self.effective_minimal() && self.t >= self.notification_bell_until && p < 0.02 {
             return;
         }
-        // 电池：位置/大小连续插值
         let bk = lerp(1.0, 0.8, m);
         let bpos = (lerp(pb.0, hb.0, m), lerp(pb.1, hb.1, m));
         if show_battery {
@@ -2992,7 +3024,6 @@ impl App {
             );
         }
 
-        // 时钟：两个字号沿同一路径交叉淡化，避免逐帧换字号
         let cpos = (lerp(pcx, hc, m), lerp(21.0, 23.0, m));
         let a_pill = (1.0 - smoothstep(0.25, 0.6, m)) * layout.clearance(bar::CLOCK);
         let a_head = smoothstep(0.35, 0.75, m);
@@ -3066,8 +3097,6 @@ impl App {
         }
     }
 
-    /// 常驻内容：顶部停靠走共享元素过渡（药丸里的电池、时钟飞到顶栏）；
-    /// 左右停靠时竖排内容随展开淡出，顶栏随面板内容淡入。
     fn resident_header(
         &mut self,
         base: &Card,
@@ -3128,9 +3157,6 @@ impl App {
         self.pet.step(state, self.t, self.dt, gaze, visible);
     }
 
-    // ---------------------------------------------------------------
-    // 面板主体：页标题 + 页面（带切页过渡）+ 翻页箭头 + 页码豆
-    // ---------------------------------------------------------------
     fn panel_body(&mut self, c: &Card, env: &Env, cmds: &mut Vec<Cmd>) {
         self.expanded_header(c, cmds);
         let content_dy = match self.page {
@@ -3144,8 +3170,12 @@ impl App {
             _ => 0.0,
         };
         let viewing = self.page == model::page::IMAGES && self.image_view_open;
-        let page_width = if viewing { self.w.pos } else { PW };
-        let x_offset = ((self.w.pos - page_width) / 2.0).max(0.0);
+        let page_width = if viewing {
+            self.content_layout_width()
+        } else {
+            PW
+        };
+        let x_offset = ((self.content_layout_width() - page_width) / 2.0).max(0.0);
         let bounds = content_bounds(self.h.pos, page_width);
         let content = c
             .clipped(
@@ -3158,7 +3188,6 @@ impl App {
         let e = self.page_e();
         let in_tx = e < 0.55 && self.page_from != self.page;
         if in_tx {
-            // 纯交叉淡化：页面坐标完全固定，避免文字和控件在切换时抖动。
             let old_a = 1.0 - smoothstep(0.0, 0.16, e);
             let new_a = smoothstep(0.03, 0.28, e);
             if old_a > 0.0 {
@@ -3253,25 +3282,10 @@ impl App {
                 }
             }
         } else if self.page == model::page::IMAGES {
-            let (total, recent) = {
-                let history = self.clipboard.lock();
-                (
-                    history.images.len(),
-                    history.images.iter().filter(|item| !item.pinned).count(),
-                )
-            };
+            let total = self.clipboard.lock().images.len();
             if self.image_view_open {
-                let header_right = self.w.pos - CONTENT_LEFT;
+                let header_right = self.content_layout_width() - CONTENT_LEFT;
                 let close_label = self.settings.language.text("关闭", "Close");
-                let folder_right = header_right - c.text_w(close_label, 10.5, W::Semibold) - 18.0;
-                if self.header_action(
-                    c,
-                    self.settings.language.text("打开文件夹", "Open folder"),
-                    folder_right,
-                    "header-image-open-folder",
-                ) {
-                    cmds.push(Cmd::Open(crate::clipboard::image_dir()));
-                }
                 if self.header_action(c, close_label, header_right, "header-image-view-close") {
                     self.image_view_open = false;
                     self.image_view_index = 0;
@@ -3282,36 +3296,21 @@ impl App {
                 let clear_label = self.settings.language.text("清空", "Clear");
                 if total > 0 {
                     let view_label = self.settings.language.text("查看", "View");
-                    let view_right = if recent > 0 {
-                        header_right - c.text_w(clear_label, 10.5, W::Semibold) - 18.0
-                    } else {
-                        header_right
-                    };
-                    let folder_right = view_right - c.text_w(view_label, 10.5, W::Semibold) - 18.0;
-                    if self.header_action(
-                        c,
-                        self.settings.language.text("打开文件夹", "Open folder"),
-                        folder_right,
-                        "header-image-open-folder",
-                    ) {
-                        cmds.push(Cmd::Open(crate::clipboard::image_dir()));
-                    }
+                    let view_right = header_right - c.text_w(clear_label, 10.5, W::Semibold) - 18.0;
                     if self.header_action(c, view_label, view_right, "header-image-view") {
                         self.image_view_open = true;
                         self.image_view_index = 0;
-                        self.image_preview_active = false;
                         self.sync_panel_layout();
                     }
-                }
-                if recent > 0
-                    && self.header_action(c, clear_label, header_right, "header-image-clear")
-                {
-                    self.clipboard.lock().clear_recent_images();
-                    self.image_first = 0;
-                    self.say(self.settings.language.text(
-                        "图片记录已清空（固定的保留）",
-                        "Image history cleared. Pinned images were kept.",
-                    ));
+                    if self.header_action(c, clear_label, header_right, "header-image-clear") {
+                        self.clipboard.lock().clear_images();
+                        self.image_first = 0;
+                        self.say(
+                            self.settings
+                                .language
+                                .text("临时图片已全部清空", "All temporary images were cleared."),
+                        );
+                    }
                 }
             }
         } else if self.page == model::page::CLIPBOARD {
@@ -3425,7 +3424,6 @@ impl App {
                 self.navigate_page(true);
             }
         }
-        // 每个分页保留固定槽位，只让槽内的豆伸缩，导航轴心不会漂移。
         const DOT_SLOT: f32 = 16.0;
         const DOT_GAP: f32 = 4.0;
         let mut x = navigation.dots_left;
@@ -3477,7 +3475,9 @@ impl App {
             model::page::VIDEO => self.page_video(c, env, cmds),
             model::page::MONITOR => self.page_monitor(c, env, cmds),
             model::page::SHELF => self.page_shelf(c, env, cmds),
-            model::page::IMAGES if self.image_view_open => self.page_image_viewer(c, self.w.pos),
+            model::page::IMAGES if self.image_view_open => {
+                self.page_image_viewer(c, self.content_layout_width(), cmds)
+            }
             model::page::IMAGES => self.page_images(c, env, cmds),
             model::page::CLIPBOARD => self.page_clipboard(c, env, cmds),
             model::page::MAIL => self.page_mail(c, env, cmds),
@@ -3486,9 +3486,7 @@ impl App {
     }
 
     fn toast_layer(&mut self, c: &Card, area: Rect, anchor_y: f32) -> Option<Rect> {
-        let Some((msg, at)) = self.toast.clone() else {
-            return None;
-        };
+        let (msg, at) = self.toast.clone()?;
         let e = (self.t - at) as f32;
         if e > 2.4 {
             self.toast = None;
@@ -3521,14 +3519,10 @@ impl App {
         Some(rect)
     }
 
-    // ---------------------------------------------------------------
-    // 每帧推进：跨天与保留的动画
-    // ---------------------------------------------------------------
     fn tick(&mut self, dt: f32, _elapsed: f32) {
         if self.toast.as_ref().is_some_and(|(_, at)| self.t - at > 2.4) {
             self.toast = None;
         }
-        // 剪贴板记录开关：关闭时同时清掉未固定的记录。
         if self.clipboard.is_enabled() != self.settings.clipboard_history {
             self.clipboard.set_enabled(self.settings.clipboard_history);
         }
@@ -3574,7 +3568,6 @@ impl App {
         }
     }
 
-    /// 媒体进度在两次 SMTC 刷新之间按时间外推，进度条才会连续走动。
     fn update_media(&mut self, env: &Env, ctx: &egui::Context) {
         let m = &env.media;
         if m.is_video() {
@@ -3639,7 +3632,6 @@ impl App {
                 np.position = np.position.min(m.duration);
             }
         }
-        // 网易云的 song_id 只来自本机日志，SMTC 那一路没有；None 与 Some 之间来回不是换歌，不能每次都清空歌词重查。
         let other_song =
             matches!((self.media.song_id,np.song_id),(Some(old),Some(new)) if old!=new);
         if self.media.source != np.source || other_song {
@@ -3683,7 +3675,6 @@ impl App {
             && np.song_id.is_some()
             && !self.ly.lyrics.as_ref().is_some_and(|lyrics| lyrics.synced);
         if key != self.ly.key || id_arrived || self.ly.retry_at.is_some_and(|at| self.t >= at) {
-            // 歌曲信息抖动或快速切歌不能叠加网络线程；旧请求完成后只查询当前歌曲。
             if self
                 .ly_worker
                 .as_ref()
@@ -3730,8 +3721,6 @@ impl App {
                 self.ly.native_rx = Some(rx);
                 let (source, title, artist) = (source.clone(), title.clone(), artist.clone());
                 crate::resources::NATIVE_LYRICS.spawn(move || {
-                    // 客户端通常在开播几秒内写好歌词：先密后疏（0.5s 起，最长 5s 一次），最多等 90 秒。
-                    // 汽水的缓存文件可达 32MB，修改时间和大小都没变时不重复整份读取，但每 15 秒仍完整核对一次。
                     let started = std::time::Instant::now();
                     let mut wait = std::time::Duration::from_millis(500);
                     let mut last: Option<((std::time::SystemTime, u64), std::time::Instant)> = None;
@@ -3837,7 +3826,6 @@ impl App {
         }
     }
 
-    /// 外部直接提供歌词（录制演示用）。
     pub fn set_lyrics(&mut self, title: &str, artist: &str, duration: f64, l: lyrics::Lyrics) {
         self.ly = LyricsState {
             key: format!("{title}|{artist}|{duration:.0}"),

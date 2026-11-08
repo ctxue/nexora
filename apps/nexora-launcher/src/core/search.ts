@@ -75,11 +75,6 @@ function isSubsequence(query: string, value: string): boolean {
   return false;
 }
 
-/**
- * A deliberately small fuzzy scorer. It handles exact/prefix/contains,
- * word initials (vsc -> Visual Studio Code), pinyin (wx -> 微信), and
- * ordered subsequences for typo-tolerant matches.
- */
 function scoreField(query: string, value: string, allowFuzzy = true): number {
   const field = normalize(value);
   if (!field) return 0;

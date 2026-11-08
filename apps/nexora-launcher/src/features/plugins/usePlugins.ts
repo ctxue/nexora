@@ -21,7 +21,6 @@ function saveDisabled(ids: string[]) {
   try {
     window.localStorage.setItem(DISABLED_KEY, JSON.stringify(ids));
   } catch {
-    // Ignore quota errors: a disabled plugin list is not critical.
   }
 }
 
@@ -29,11 +28,9 @@ function bumpRevision() {
   try {
     window.localStorage.setItem(REV_KEY, String(Date.now()));
   } catch {
-    // Ignore; the other window will refresh next time it opens.
   }
 }
 
-/** Installed plugins and their enabled state, shared by both windows. */
 export function usePlugins() {
   const [plugins, setPlugins] = useState<PluginManifest[]>([]);
   const [disabled, setDisabled] = useState<string[]>(loadDisabled);

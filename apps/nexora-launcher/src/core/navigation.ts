@@ -4,10 +4,6 @@ function isPreviewable(item: LauncherItem | undefined): boolean {
   return Boolean(item?.kind === "file" && item.path);
 }
 
-/**
- * Finds the next previewable file while preserving the current file at either
- * edge. Keeping the current selection is less surprising than wrapping around.
- */
 export function findPreviewIndex(
   items: LauncherItem[],
   currentIndex: number,

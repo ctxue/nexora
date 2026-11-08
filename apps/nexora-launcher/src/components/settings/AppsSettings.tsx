@@ -14,7 +14,6 @@ interface AppsSettingsProps {
   onRefreshIndexes: () => void;
 }
 
-/** Settings page that owns the app library: hand-added apps + index folders. */
 export function AppsSettings({
   manualApps,
   indexFolders,

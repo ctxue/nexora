@@ -1,12 +1,7 @@
-//! Plugin host: installs plugin folders and talks JSON-RPC to their processes.
+//! Plugin process host and line-delimited JSON-RPC bridge.
 //!
-//! Protocol (one JSON object per line, stdio):
-//!   host -> plugin: {"jsonrpc":"2.0","id":1,"method":"search",
-//!                    "params":{"query":"…","keyword":"ip"}}
-//!   plugin -> host: {"jsonrpc":"2.0","id":1,"result":{"items":[…]}}
-//!
-//! Plugins never touch the UI: they only return declarative items whose
-//! actions the host executes.
+//! Plugins return declarative search results only. Filesystem actions and UI
+//! execution remain inside the trusted NEXORA process.
 
 use std::{
     collections::HashMap,
@@ -37,7 +32,6 @@ pub struct PluginManifest {
     pub description: String,
     #[serde(default)]
     pub author: String,
-    /// Executable or interpreter, relative to the plugin folder or on PATH.
     pub entry: String,
     #[serde(default)]
     pub args: Vec<String>,
@@ -217,7 +211,6 @@ fn resolve_entry(dir: &Path, entry: &str) -> Result<PathBuf, String> {
     } else if entry.contains('/') || entry.contains('\\') {
         Err(format!("Plugin entry not found: {entry}"))
     } else {
-        // Command name on PATH (powershell.exe, node.exe, python.exe…).
         Ok(PathBuf::from(entry))
     }
 }
@@ -416,7 +409,6 @@ fn search_blocking(
     let manifest = read_manifest(&dir)?;
     let timeout = Duration::from_millis(manifest.timeout_ms.clamp(500, MAX_TIMEOUT_MS));
 
-    // Requests are serialized: one plugin process handles one call at a time.
     let mut processes = processes
         .lock()
         .map_err(|_| "Plugin host is busy".to_string())?;

@@ -1,8 +1,8 @@
-﻿!ifndef APP_ID
+!ifndef APP_ID
   !define APP_ID "NexoraIsle"
 !endif
 !ifndef APP_NAME
-  !define APP_NAME "NEXORA ISLE · 星屿"
+  !define APP_NAME "NEXORA ISLE · 岛屿"
 !endif
 
 ; 安装默认行为。需要定制时在这里修改，或通过 makensis /D 参数覆盖。

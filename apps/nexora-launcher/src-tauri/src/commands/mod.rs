@@ -1,8 +1,3 @@
-//! `#[tauri::command]` handlers, one module per domain.
-//!
-//! Every handler is re-exported here so `app.rs` can hand a single list to
-//! `tauri::generate_handler!`.
-
 pub mod actions;
 pub mod apps;
 pub mod browsers;

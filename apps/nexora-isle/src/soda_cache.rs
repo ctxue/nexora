@@ -1,4 +1,3 @@
-//! 只读解析汽水 3.7 媒体缓存中的原生歌词；不读取登录配置或音频。
 use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
 
@@ -11,7 +10,6 @@ fn le(data: &[u8], offset: usize, n: usize) -> Option<usize> {
     )
 }
 
-/// 仅遍历当前已提交快照的主数据库，忽略空闲页及旧事务内容。
 fn entries(data: &[u8]) -> Option<Vec<&[u8]>> {
     if le(data, 24, 4)? != 0xbeefc0de || le(data, 28, 4)? != 2 {
         return None;
@@ -86,7 +84,6 @@ fn entries(data: &[u8]) -> Option<Vec<&[u8]>> {
     Some(result)
 }
 
-// 汽水使用 MessagePack 的内联 record 扩展；记录表仅在单个值内有效。
 struct Decoder<'a> {
     data: &'a [u8],
     pos: usize,
@@ -274,7 +271,6 @@ fn path() -> Option<std::path::PathBuf> {
     )
 }
 
-/// 缓存文件的修改时间与大小；没变化时轮询不再整份读取（文件最大 32MB）。
 pub fn fingerprint() -> Option<(std::time::SystemTime, u64)> {
     let meta = std::fs::metadata(path()?).ok()?;
     Some((meta.modified().ok()?, meta.len()))
@@ -282,7 +278,6 @@ pub fn fingerprint() -> Option<(std::time::SystemTime, u64)> {
 
 pub fn read(title: &str, artist: &str, duration: f64) -> Option<String> {
     let path = path()?;
-    // 复制快照后校验元页，客户端写入期间放弃本次读取，由后续轮询重试。
     use std::io::Read;
     let file = std::fs::File::open(&path).ok()?;
     if file.metadata().ok()?.len() > 32 * 1024 * 1024 {

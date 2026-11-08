@@ -1,5 +1,3 @@
-//! Launcher window: visibility, focus, and early-keystroke handling.
-
 mod focus;
 mod window;
 

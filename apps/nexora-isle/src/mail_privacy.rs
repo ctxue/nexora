@@ -1,8 +1,8 @@
-//! Display privacy only: hiding a code never asserts that the issuer expired it.
 use crate::mail::Item;
 use std::collections::HashMap;
 
 #[derive(Default)]
+#[allow(clippy::type_complexity)]
 pub(crate) struct Privacy {
     seen: HashMap<(String, u32, String), Seen>,
     revealed: HashMap<(String, u32, String), f64>,
@@ -24,8 +24,6 @@ fn key(item: &Item) -> (String, u32, String) {
     )
 }
 
-/// Accept only explicit relative durations in the same short sentence as the code.
-/// Absolute dates, generic login/session durations, conflicting values and vague prose fall back.
 pub fn explicit_lifetime(subject: &str, body: &str, code: &str) -> Option<u64> {
     if code.is_empty() {
         return None;
@@ -57,7 +55,6 @@ pub fn explicit_lifetime(subject: &str, body: &str, code: &str) -> Option<u64> {
             let gap = sentence[code_end..start]
                 .trim_matches(|c: char| c.is_whitespace() || ",，:：.。".contains(c))
                 .to_ascii_lowercase();
-            // A nearby membership/session lifetime is not the code's lifetime.
             if ![
                 "",
                 "的",
@@ -103,7 +100,6 @@ pub fn mask(text: &str, code: &str) -> String {
     if code.is_empty() {
         return text.into();
     }
-    // 提取器会归一化全角和零宽字符；遮挡时也匹配原文中的这些写法。
     let pattern = code
         .chars()
         .filter(|c| c.is_ascii_alphanumeric())

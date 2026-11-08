@@ -1,13 +1,7 @@
-//! 配色、字体与字号。
-//!
-//! Segoe UI for Latin text, Microsoft YaHei UI for Chinese, and Malgun Gothic
-//! for Korean. System fallbacks keep text metrics stable on Windows.
-
 use eframe::egui::{self, Color32, FontData, FontDefinitions, FontFamily, FontId};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-// ---------- 颜色 ----------
 pub const RED: Color32 = Color32::from_rgb(242, 48, 70);
 pub const RED_TOP: Color32 = Color32::from_rgb(253, 104, 92);
 pub const BLUE: Color32 = Color32::from_rgb(62, 172, 248);
@@ -31,7 +25,6 @@ pub fn alpha_blue(a: f32) -> Color32 {
     Color32::from_rgba_unmultiplied(BLUE.r(), BLUE.g(), BLUE.b(), (255.0 * a) as u8)
 }
 
-/// 字重档位。
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum W {
     Regular,
@@ -47,8 +40,6 @@ pub fn font(size: f32, w: W) -> FontId {
     }
 }
 
-/// 字号表（逻辑点）。汉字天然比拉丁字母「显大」，中文字号单独一套，
-/// 让两种文字的视觉重量一致，而不是硬把墨高压到拉丁大写高度。
 pub mod size {
     pub const TITLE: f32 = 14.5; // 页标题（中文）
     pub const CLOCK: f32 = 12.5; // 顶栏时钟
@@ -110,7 +101,6 @@ fn font_dirs() -> Vec<PathBuf> {
     v
 }
 
-/// 装载三档字重。每档 = 拉丁字体 + 中文回退 + 韩文回退；缺哪个就跳过，最后兜底 egui 内置字体。
 pub fn load_fonts(ctx: &egui::Context) {
     ctx.set_fonts(shared_fonts().clone());
 }
@@ -130,7 +120,6 @@ struct MappedFont {
 impl MappedFont {
     fn open(path: &Path) -> std::io::Result<Self> {
         use std::os::windows::fs::OpenOptionsExt;
-        // 保留文件句柄并禁止原地写入；允许系统以替换文件的方式更新字体。
         let source = std::fs::OpenOptions::new()
             .read(true)
             .share_mode(0x1 | 0x4)
@@ -146,7 +135,6 @@ impl MappedFont {
 fn font_bytes(path: &Path) -> Option<&'static [u8]> {
     #[cfg(windows)]
     if let Ok(mapped) = MappedFont::open(path) {
-        // 所有字体由进程级 OnceLock 持有，映射和只读句柄与排版器同寿命。
         let mapped = Box::leak(Box::new(mapped));
         return Some(&mapped.bytes);
     }
@@ -262,7 +250,6 @@ fn build_fonts() -> FontDefinitions {
     fonts
 }
 
-/// Every native window uses the NEXORA ISLE mark.
 pub fn app_icon() -> std::sync::Arc<eframe::egui::IconData> {
     static ICON: std::sync::OnceLock<std::sync::Arc<eframe::egui::IconData>> =
         std::sync::OnceLock::new();

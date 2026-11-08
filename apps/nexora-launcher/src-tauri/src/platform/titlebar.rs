@@ -1,9 +1,3 @@
-//! Native title bar coloring.
-//!
-//! The settings window keeps native decorations, so DWM paints its caption. It
-//! is recolored with the page chrome to make the title bar and the body read as
-//! one surface, and flipped for the dark theme.
-
 use tauri::WebviewWindow;
 use windows::Win32::{
     Foundation::HWND,
@@ -31,7 +25,6 @@ fn set_attribute(
     }
 }
 
-/// Applies the chrome colors matching the requested theme.
 pub fn apply(window: &WebviewWindow, dark: bool) {
     let Ok(hwnd) = window.hwnd() else {
         return;

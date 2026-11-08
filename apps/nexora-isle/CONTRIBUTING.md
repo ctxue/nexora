@@ -18,13 +18,15 @@ cargo build --bin nexora-isle
 
 ## 代码约定
 
-- 产品文案统一使用 `NEXORA ISLE` 或中文名 `星屿`。
+- 产品文案统一使用 `NEXORA ISLE` 或中文名 `岛屿`。
+- 产品中文名只使用“岛屿”；`NOMI` 是岛屿表情角色，避免用其他昵称指代产品。
 - 机器标识统一使用 `nexora-isle`、`nexora_isle` 或 `NexoraIsle`。
 - 产品身份、数据目录和更新地址集中在 `src/product/`。
 - 页面索引使用 `src/model/page.rs` 中的常量。
 - 不重新引入专注、饮水、AI 额度或日历/日程模块。
 - 新功能应拆分为职责明确的模块，并在 `src/lib.rs` 中声明。
 - Windows 特定代码必须使用平台条件编译。
+- 注释只说明设计原因、数据不变量、安全边界和 Windows 特殊行为，不记录开发过程或逐行复述代码。
 
 ## 测试
 

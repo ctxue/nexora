@@ -1,4 +1,3 @@
-//! 网易云原生播放事件：只读增量日志，不依赖 SMTC 或特定 DLL 版本。
 use super::{MediaKind, NowPlaying};
 use std::{
     fs::File,
@@ -25,7 +24,6 @@ fn monotonic_millis() -> u64 {
     epoch.saturating_add(start.elapsed().as_millis() as u64)
 }
 
-// 初次读取历史记录时，使用可读的本地日期恢复进度；实时推进只依赖 Instant。
 fn historical_millis(line: &str, now: u64) -> Option<u64> {
     use chrono::{Datelike, TimeZone};
     let date = line.strip_prefix('[')?.split(':').nth(2)?;
@@ -53,7 +51,6 @@ fn historical_millis(line: &str, now: u64) -> Option<u64> {
     None
 }
 
-// 网易云 elog 的本地读取格式。
 fn decode(byte: u8) -> u8 {
     let high = byte >> 4;
     let low = byte & 15;
@@ -181,7 +178,6 @@ impl Playback {
         if parts.next().and_then(|s| s.parse::<u32>().ok()) != Some(pid) {
             return;
         }
-        // 日志计数只比较事件先后，不能与本机单调时钟相减。
         let Some(at) = parts
             .nth(2)
             .and_then(|s| s.parse::<u64>().ok())
@@ -193,7 +189,6 @@ impl Playback {
             *self = Self::default();
             return;
         }
-        // 只解析播放事件；音频签名链接、Cookie 等其他日志内容不会进入状态或缓存。
         let Some((_, body)) = body.split_once("【playing】,") else {
             return;
         };
@@ -304,7 +299,6 @@ impl CoverCache {
         url: &str,
         load: impl FnOnce(&str) -> Option<Arc<eframe::egui::ColorImage>> + Send + 'static,
     ) -> Option<Arc<eframe::egui::ColorImage>> {
-        // 切歌时丢弃旧请求的接收端，迟到的封面不能覆盖新歌。
         if self.url != url {
             *self = Self {
                 url: url.into(),
@@ -339,7 +333,6 @@ impl CoverCache {
             let url = self.url.clone();
             self.pending = Some(receiver);
             self.retry_at = Some(Instant::now() + Duration::from_secs(3));
-            // 网络与解码不占用媒体轮询线程，歌词时间轴继续正常推进。
             self.worker = crate::resources::COVER.spawn(move || {
                 let _ = sender.send(load(&url));
             });
@@ -563,14 +556,12 @@ impl Reader {
             self.offset = size;
             self.ingest(&bytes, now, replay);
         }
-        // 启动时续播可能只写歌曲 ID，按该 ID 补充本地队列里的元数据。
         let id = self.playback.media.song_id;
         if id.is_some()
             && (!self.playback.media.is_music() || self.playback.artwork_url.is_empty())
             && (self.lookup.0 != id || now.saturating_sub(self.lookup.1) >= 5000)
         {
             let root = path.parent()?;
-            // 队列文件可达 8MB：同一首歌且文件没有变化时不重复解析（这首歌本来就没有封面时会一直满足上面的条件）。
             let print = queue_fingerprint(root);
             if self.lookup.0 != id || self.queue_print != print {
                 self.queue_print = print;
@@ -674,7 +665,6 @@ pub(super) fn control(command: super::Transport) {
     };
     unsafe {
         if let Ok(window) = FindWindowW(w!("OrpheusBrowserHost"), PCWSTR::null()) {
-            // 读取网易云当前注册的命令，不缓存随进程变化的编号，也不广播系统媒体键。
             let atom = GlobalFindAtomW(&HSTRING::from(name));
             if atom != 0 {
                 let _ = PostMessageW(window, WM_HOTKEY, WPARAM(atom as usize), LPARAM(0));

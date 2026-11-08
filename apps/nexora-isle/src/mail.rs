@@ -1,11 +1,7 @@
-//! 六类邮箱的账号模型、IMAP 收取与正文解析。
+//! Mailbox configuration, IMAP synchronization, and message parsing.
 //!
-//! 轻量化约束：只用 Rust 原生 crate（`imap` + `native-tls` + `mailparse`），
-//! 不引 Node/Go/Electron。凭据一律进 Windows 凭据管理器（`keyring`），
-//! 账号清单只存「邮箱 + 类型 + 是否监控」，不存密码。
-//!
-//! 收信优先 `Session::idle()` 长连接；服务器不支持 IDLE 时退回轮询（60/120/300 秒）。
-//! 正文只在内存里解析，不落盘、不缓存。
+//! Account metadata is stored locally; app passwords live in Windows Credential
+//! Manager. Message bodies stay in memory and no attachment is downloaded.
 
 use std::collections::HashMap;
 #[cfg(windows)]
@@ -23,10 +19,9 @@ fn imap_id_message() -> String {
     )
 }
 
-// ---------------------------------------------------------------- 邮箱类型
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Provider {
+    #[default]
     Qq,
     Mail163,
     Mail126,
@@ -34,12 +29,6 @@ pub enum Provider {
     ICloud,
     Gmail,
     Custom,
-}
-
-impl Default for Provider {
-    fn default() -> Self {
-        Provider::Qq
-    }
 }
 
 impl Provider {
@@ -97,12 +86,10 @@ impl Provider {
         993
     }
 
-    /// 163 / 126 在 LOGIN 之前必须发 RFC 2971 的 `ID`，否则会被判 Unsafe Login。
     pub fn needs_id(self) -> bool {
         matches!(self, Provider::Mail163 | Provider::Mail126)
     }
 
-    /// 设置界面的操作指引。
     pub fn hint(self) -> &'static str {
         self.hint_for(crate::i18n::Language::Zh)
     }
@@ -182,7 +169,6 @@ impl Provider {
         }
     }
 
-    /// Common mailbox domains do not need an extra provider-selection step.
     pub fn for_email(email: &str) -> Option<Self> {
         let domain = email.trim().rsplit_once('@')?.1.to_ascii_lowercase();
         match domain.as_str() {
@@ -196,8 +182,6 @@ impl Provider {
         }
     }
 
-    /// Webmail links are common paste mistakes. Recognize the provider without
-    /// pretending that the URL itself is a mailbox account.
     pub fn for_web_url(raw: &str) -> Option<Self> {
         let url = url::Url::parse(raw.trim()).ok()?;
         let host = url.host_str()?.trim_end_matches('.').to_ascii_lowercase();
@@ -225,14 +209,11 @@ impl Provider {
     }
 }
 
-// ---------------------------------------------------------------- 账号与状态
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Account {
     pub email: String,
     pub provider: Provider,
     pub custom: Option<CustomImap>,
-    /// 是否监控这个账号（设置里可逐个开关）。
     pub enabled: bool,
 }
 
@@ -289,7 +270,6 @@ impl Account {
         }
         Ok((host, c.port, user.into()))
     }
-    /// Custom secrets are bound to the TLS endpoint and exact login identity.
     pub fn credential_key(&self) -> String {
         if self.provider != Provider::Custom {
             return key(self);
@@ -319,13 +299,16 @@ fn accounts_path() -> std::path::PathBuf {
 }
 
 pub fn load_accounts() -> Vec<Account> {
-    match std::fs::read(accounts_path()) {
+    load_accounts_from(&accounts_path())
+}
+
+fn load_accounts_from(path: &std::path::Path) -> Vec<Account> {
+    match std::fs::read(path) {
         Ok(raw) => decode_accounts(&raw),
         Err(_) => Vec::new(),
     }
 }
 
-/// 纯解析：账号清单里只有邮箱、类型、开关，没有任何密码字段。
 pub fn decode_accounts(raw: &[u8]) -> Vec<Account> {
     let Ok(json) = serde_json::from_slice::<serde_json::Value>(raw) else {
         return Vec::new();
@@ -369,16 +352,19 @@ pub fn encode_accounts(items: &[Account]) -> Vec<u8> {
 }
 
 pub fn save_accounts(items: &[Account]) -> Result<(), String> {
+    save_accounts_to(&accounts_path(), items)
+}
+
+fn save_accounts_to(path: &std::path::Path, items: &[Account]) -> Result<(), String> {
     let data = encode_accounts(items);
     if data.is_empty() {
         return Err("邮箱账号清单序列化失败".into());
     }
-    let path = accounts_path();
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|error| format!("创建邮箱数据目录失败：{error}"))?;
     }
-    crate::model::atomic_write(&path, &data).map_err(|error| format!("保存邮箱账号失败：{error}"))
+    crate::model::atomic_write(path, &data).map_err(|error| format!("保存邮箱账号失败：{error}"))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -386,7 +372,6 @@ pub enum Status {
     Idle,
     Connecting,
     Ready,
-    /// 授权码缺失或失效。
     Auth(String),
     Failed(String),
 }
@@ -427,12 +412,9 @@ pub struct Item {
     pub account: String,
     pub from: String,
     pub subject: String,
-    /// 本地时间 `MM-DD HH:MM`
     pub time: String,
     pub code: Option<String>,
-    /// IMAP INTERNALDATE, used only to bound code display age.
     pub received_unix: Option<i64>,
-    /// 完整纯文字正文，保留分段，仅保存在内存中。
     pub summary: std::sync::Arc<str>,
     pub links: Vec<Link>,
     pub uid: u32,
@@ -444,7 +426,6 @@ pub struct Link {
     pub url: String,
 }
 
-/// 仅把有效网页链接交给默认浏览器。
 pub fn web_url(raw: &str) -> Option<String> {
     let parsed = url::Url::parse(raw.trim()).ok()?;
     if !matches!(parsed.scheme(), "https" | "http") || parsed.host_str().is_none() {
@@ -523,14 +504,10 @@ pub enum Event {
     },
 }
 
-// ---------------------------------------------------------------- 正文解析
-
 pub struct Parsed {
     pub from: String,
     pub subject: String,
-    /// text/plain 正文（没有则空）。
     pub text: String,
-    /// text/html 正文转成的纯文本（没有则空）。
     pub html: String,
     pub emphasized: Vec<String>,
 }
@@ -581,7 +558,6 @@ fn collect(mail: &mailparse::ParsedMail, plain: &mut String, html: &mut String) 
     }
 }
 
-/// 解析一封原始邮件（头部 + 正文），只保留界面上要用的字段。
 pub fn parse_message(raw: &[u8]) -> Parsed {
     let Ok(mail) = mailparse::parse_mail(raw) else {
         return Parsed {
@@ -610,7 +586,6 @@ pub fn parse_message(raw: &[u8]) -> Parsed {
     }
 }
 
-/// 优先纯文本，HTML 邮件转成文字；保留完整正文与段落。
 pub fn body_of(parsed: &Parsed) -> String {
     let body = if !parsed.text.trim().is_empty() {
         parsed.text.clone()
@@ -622,7 +597,6 @@ pub fn body_of(parsed: &Parsed) -> String {
     body.replace("\r\n", "\n").trim().to_string()
 }
 
-/// 紧凑场景使用的短摘要。
 pub fn summary_of(parsed: &Parsed) -> String {
     let body = body_of(parsed);
     let flat = body.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -633,7 +607,6 @@ pub fn summary_of(parsed: &Parsed) -> String {
     out
 }
 
-/// 从解析结果里提验证码：先纯文本，纯文本没有再看 HTML 文本。
 pub fn code_of(parsed: &Parsed) -> Option<String> {
     if let Some(c) = otp::extract(&parsed.subject, &parsed.text, &parsed.emphasized) {
         return Some(c.text);
@@ -649,8 +622,6 @@ pub fn code_of(parsed: &Parsed) -> Option<String> {
 
 use crate::otp;
 
-// ---------------------------------------------------------------- 凭据
-
 #[cfg(windows)]
 pub mod secrets {
     fn load_from(service: &str, email: &str) -> Result<String, String> {
@@ -661,7 +632,6 @@ pub mod secrets {
             .map_err(|_| "没有保存授权码".to_string())
     }
 
-    /// 凭据只进 Windows 凭据管理器；键是邮箱地址，值是授权码。
     pub fn save(email: &str, password: &str) -> Result<(), String> {
         let entry = keyring::Entry::new(super::SERVICE, &email.to_ascii_lowercase())
             .map_err(|e| format!("凭据管理器不可用：{e}"))?;
@@ -706,15 +676,8 @@ pub mod secrets {
     pub fn delete(_email: &str) {}
 }
 
-// ---------------------------------------------------------------- 收信服务
-
 #[cfg(windows)]
 mod net {
-    //! TLS 连接 + 163/126 的 pre-login `ID` 握手。
-    //!
-    //! `imap` 只在已登录的 `Session` 上暴露 `run_command_and_check_ok`，
-    //! 而网易要求 greeting → ID → LOGIN 的顺序，所以这里手工读问候、发 ID，
-    //! 再把「已经读掉的开头字节」原样交回给 imap。
 
     use super::Account;
     use imap::extensions::idle::SetReadTimeout;
@@ -725,7 +688,6 @@ mod net {
 
     pub type Stream = TlsStream<TcpStream>;
 
-    /// 先吐出预先读到的问候字节，再透传给底层流。
     pub struct Prefixed<S> {
         head: Vec<u8>,
         pos: usize,
@@ -768,7 +730,6 @@ mod net {
         fn set_read_timeout(&mut self, timeout: Option<Duration>) -> imap::Result<()> {
             self.inner
                 .get_ref()
-                // imap 结束 IDLE 时传入 None；恢复普通命令的超时，避免无限阻塞。
                 .set_read_timeout(timeout.or(Some(Duration::from_secs(20))))
                 .map_err(imap::Error::Io)
         }
@@ -811,7 +772,6 @@ mod net {
             .connect(&host, tcp)
             .map_err(|e| format!("TLS 握手失败：{e}"))?;
 
-        // 1) 读问候，直到 "* OK" / "* PREAUTH"
         let mut greeting = Vec::new();
         loop {
             let mut line = Vec::new();
@@ -829,7 +789,6 @@ mod net {
             }
         }
 
-        // 2) 网易系：LOGIN 之前先发 ID（RFC 2971）
         if account.provider.needs_id() {
             stream
                 .write_all(super::imap_id_message().as_bytes())
@@ -850,7 +809,6 @@ mod net {
             }
         }
 
-        // 3) 把问候交回 imap，再正常登录
         let mut client = imap::Client::new(Prefixed::new(greeting, stream));
         client
             .read_greeting()
@@ -872,7 +830,6 @@ mod net {
         }
     }
 
-    /// 测试连接：连上、登录、选 INBOX，然后退出。
     pub fn probe(account: &Account, password: &str) -> Result<(), String> {
         let mut session = connect(account, password)?;
         session
@@ -1003,7 +960,6 @@ mod service {
     >(
         session: &mut imap::Session<T>,
     ) -> imap::Result<()> {
-        // 优先响应服务器推送；定期补查，避免服务端漏推送时长时间没有提醒。
         let mut idle = session.idle();
         idle.timeout(Duration::from_secs(10)).keepalive(false);
         idle.wait_while(imap::extensions::idle::stop_on_any)
@@ -1146,7 +1102,6 @@ mod service {
                     return;
                 }
                 if idle_supported {
-                    // 推送连接出错后重连，不能永久降级为轮询。
                     if wait_for_change(&mut session).is_err() {
                         break;
                     }
@@ -1173,7 +1128,6 @@ mod service {
         }
     }
 
-    /// 首次连接：把最近 20 封读进面板，但不当作新邮件提示。
     fn recent(
         session: &mut imap::Session<net::Prefixed<net::Stream>>,
         account: &Account,
@@ -1190,7 +1144,6 @@ mod service {
                     let _ = ev.send(Event::Mail { item, new: false });
                 }
                 Ok(None) => {}
-                // 连接已失步：停止使用这条连接，后面的命令会失败并触发重连。
                 Err(()) => break,
             }
         }
@@ -1229,7 +1182,6 @@ mod service {
         service.sync(&[], 120);
         panic!("160 秒内未收到新邮件事件");
     }
-    /// 显式运行的真实邮箱只读检查；不输出地址、凭据或邮件内容。
     #[test]
     #[ignore = "需要本机已连接的 QQ 邮箱，显式执行只读实测"]
     fn qq_live_read_only_probe() {
@@ -1421,6 +1373,32 @@ mod tests {
     }
 
     #[test]
+    fn accounts_persist_in_the_local_mailbox_file_across_restarts() {
+        let dir = std::env::temp_dir().join(format!(
+            "nexora-isle-mail-persistence-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        let path = dir.join("mail-accounts.json");
+        let items = vec![Account {
+            custom: None,
+            email: "persisted@qq.com".into(),
+            provider: Provider::Qq,
+            enabled: true,
+        }];
+        save_accounts_to(&path, &items).unwrap();
+        assert_eq!(load_accounts_from(&path), items);
+        assert!(!std::fs::read_to_string(&path)
+            .unwrap()
+            .to_ascii_lowercase()
+            .contains("password"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn provider_presets_cover_six_kinds() {
         assert_eq!(Provider::ALL.len(), 7);
         assert_eq!(Provider::parse("gmail"), Provider::Gmail);
@@ -1452,7 +1430,7 @@ mod tests {
             enabled: true,
         };
         assert_eq!(
-            decode_accounts(&encode_accounts(&[gmail.clone()])),
+            decode_accounts(&encode_accounts(std::slice::from_ref(&gmail))),
             vec![gmail]
         );
         assert!(Provider::Mail163.needs_id() && Provider::Mail126.needs_id());
@@ -1469,7 +1447,6 @@ mod tests {
         let s = summary_of(&parsed);
         assert_eq!(s.chars().count(), 201, "200 字 + 省略号");
         assert!(s.ends_with('…'));
-        // 没有正文时摘要为空，界面只显示主题
         assert_eq!(summary_of(&parse_message(&raw("空", ""))), "");
     }
 
@@ -1552,7 +1529,7 @@ mod custom_endpoint_tests {
     #[test]
     fn custom_config_roundtrips_without_a_secret() {
         let a = account();
-        let raw = encode_accounts(&[a.clone()]);
+        let raw = encode_accounts(std::slice::from_ref(&a));
         assert_eq!(decode_accounts(&raw), vec![a]);
         let text = String::from_utf8(raw).unwrap();
         assert!(!text.contains("password"));

@@ -1,4 +1,3 @@
-//! 仅在已授权的系统通知缺少应用标识时，按编号和到达时间核对 Windows 记录的发送方。
 use std::ffi::{c_char, c_int, c_void, CString};
 use std::path::Path;
 use std::ptr;
@@ -38,7 +37,6 @@ fn matches_in(path: &Path, id: u32, created: i64) -> bool {
     let Ok(name) = CString::new(path.to_string_lossy().as_bytes()) else {
         return false;
     };
-    // 查询只包含数值参数。两个字段同时匹配，避免复用编号时串到另一条通知。
     let sql=CString::new(format!("SELECT 1 FROM Notification n JOIN NotificationHandler h ON h.RecordId=n.HandlerId WHERE n.Id={id} AND n.ArrivalTime={created} AND n.Type='toast' AND h.PrimaryId='QQ' LIMIT 1")).unwrap();
     unsafe extern "C" fn found(
         data: *mut c_void,

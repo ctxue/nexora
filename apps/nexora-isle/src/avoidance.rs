@@ -1,4 +1,3 @@
-//! 自动避让设置与正在运行的应用选择。
 use crate::{
     extras::{setting_row, settings_card, settings_label_with_icon},
     i18n::Language,

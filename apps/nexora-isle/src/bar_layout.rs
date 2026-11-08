@@ -1,5 +1,3 @@
-//! Top-bar slot layout with continuous movement when retained controls change.
-
 use crate::anim::{smoothstep, Spring};
 
 pub(crate) const CLOCK: usize = 0;
@@ -13,6 +11,17 @@ const EDGE_INSET: f32 = 12.0;
 const SLOT_GAP: f32 = 10.0;
 const WIDTHS: [f32; SLOT_COUNT] = [44.0, 20.0, 14.0, 20.0, 28.0];
 pub(crate) const DEFAULT_ORDER: [usize; SLOT_COUNT] = [BATTERY, PET, CLOCK, MUSIC, BELL];
+
+pub(crate) fn move_item<T>(items: &mut [T], from: usize, to: usize) {
+    if from == to || from >= items.len() || to >= items.len() {
+        return;
+    }
+    if from < to {
+        items[from..=to].rotate_left(1);
+    } else {
+        items[to..=from].rotate_right(1);
+    }
+}
 
 pub(crate) fn valid_order(order: &[usize]) -> bool {
     order.len() == SLOT_COUNT
@@ -238,5 +247,16 @@ mod tests {
         layout.reorder(&order);
         let positions: Vec<_> = order.iter().filter_map(|slot| layout.x[*slot]).collect();
         assert!(positions.windows(2).all(|pair| pair[0] < pair[1]));
+    }
+
+    #[test]
+    fn dragged_items_move_without_losing_the_remaining_order() {
+        let mut items = [10, 20, 30, 40];
+        move_item(&mut items, 0, 2);
+        assert_eq!(items, [20, 30, 10, 40]);
+        move_item(&mut items, 3, 1);
+        assert_eq!(items, [20, 40, 30, 10]);
+        move_item(&mut items, 2, 2);
+        assert_eq!(items, [20, 40, 30, 10]);
     }
 }

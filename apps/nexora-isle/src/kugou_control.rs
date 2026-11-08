@@ -1,4 +1,3 @@
-//! 酷狗未实现系统跳转时，使用客户端自己的本机播放控制接口。
 use base64::Engine;
 use std::{
     path::{Path, PathBuf},
@@ -82,7 +81,6 @@ pub fn seek(seconds: f64) -> bool {
     if !seconds.is_finite() || !(0.0..86400.0).contains(&seconds) {
         return false;
     }
-    // 串行化首次握手和跳转，避免连续拖动产生多个本地服务会话。
     static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let Ok(_guard) = LOCK.lock() else {
         return false;

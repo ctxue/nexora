@@ -1,5 +1,3 @@
-//! User-added sources: portable applications and native path pickers.
-
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
@@ -20,7 +18,6 @@ fn is_junk_executable(name: &str) -> bool {
         .any(|marker| name.contains(marker))
 }
 
-/// Lower-case letters/digits only, so folder and file names can be compared.
 fn normalize_token(value: &str) -> String {
     value
         .chars()
@@ -29,12 +26,6 @@ fn normalize_token(value: &str) -> String {
         .collect()
 }
 
-/// Keeps the main executable of a portable app and drops the helpers next to
-/// it (updaters, proxies, adb/ffmpeg-style tools, launcher stubs…).
-///
-/// The heuristic: the executable name appears in its folder name, or in the
-/// folder above it (`Doubao\app\Doubao.exe`). Users can still add any other
-/// executable by hand.
 fn looks_like_main_executable(path: &Path, stem: &str) -> bool {
     let token = normalize_token(stem);
     if token.len() < 2 {
@@ -58,7 +49,6 @@ fn looks_like_main_executable(path: &Path, stem: &str) -> bool {
         .any(|folder| folder == &token || (token.len() >= 3 && folder.contains(&token)))
 }
 
-/// Adds the single executable the user picked.
 #[tauri::command]
 pub fn pick_executable() -> Option<String> {
     dialogs::ask_executable().map(|path| path.to_string_lossy().to_string())
@@ -74,7 +64,6 @@ pub fn pick_folder() -> Option<String> {
     dialogs::ask_folder().map(|path| path.to_string_lossy().to_string())
 }
 
-/// Lists the executables inside a portable-app folder (three levels deep).
 #[tauri::command]
 pub fn scan_folder_apps(folder: String) -> Vec<AppEntry> {
     let root = PathBuf::from(folder.trim());
@@ -150,8 +139,6 @@ pub fn scan_folder_apps(folder: String) -> Vec<AppEntry> {
     apps
 }
 
-/// Scans the user's configured index folders. Executables found here join the
-/// application results, which is how portable apps become searchable.
 #[tauri::command]
 pub fn scan_index_folders(folders: Vec<String>) -> Vec<AppEntry> {
     let mut apps = Vec::new();
@@ -184,7 +171,6 @@ pub fn scan_index_folders(folders: Vec<String>) -> Vec<AppEntry> {
     apps
 }
 
-/// Starts a program with raw arguments, used by "launch" commands.
 #[tauri::command]
 pub fn launch_program(program: String, args: String) -> Result<(), String> {
     let program = program.trim();
@@ -230,7 +216,6 @@ mod tests {
         assert!(apps[0].path.ends_with("v2rayN.exe"));
     }
 
-    /// Manual check against a real folder: `NEXORA_SCAN_DIR=D:\Soft cargo test -- --ignored`.
     #[test]
     #[ignore = "reads a real folder; set NEXORA_SCAN_DIR"]
     fn scans_a_real_folder() {

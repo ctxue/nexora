@@ -3,13 +3,6 @@ import { useEffect, useState } from "react";
 import { platform } from "../../platform/tauri";
 import { acceleratorFromEvent } from "./accelerator";
 
-/**
- * Shortcut recording state machine.
- *
- * Two sources feed it: regular key events (the webview sees them) and the
- * native capture channel, which is required for space combinations because
- * Windows and the IME consume those before the webview does.
- */
 export function useShortcutRecorder(
   onShortcutChange: (shortcut: string) => Promise<boolean>,
 ) {

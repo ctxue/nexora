@@ -1,5 +1,7 @@
-//! 系统媒体会话（SMTC）读取：Windows 10/11 的“正在播放”。
-//! Windows GlobalSystemMediaTransportControlsSessionManager integration.
+//! Windows media-session sampling and transport control.
+//!
+//! SMTC sessions are mutable and may disappear between samples. State updates
+//! preserve the last trusted track when a provider temporarily omits metadata.
 
 #[cfg(windows)]
 #[path = "kugou_control.rs"]
@@ -37,9 +39,7 @@ pub struct NowPlaying {
     pub song_id: Option<u64>,
     pub playing: bool,
     pub position: f64,
-    /// 播放位置的采样时刻，避免封面读取和线程交接消耗歌词提前量。
     pub sampled_at: Option<std::time::Instant>,
-    /// 播放事件的 UTC 毫秒，用于比较系统会话与本机日志的新旧。
     pub event_time_ms: Option<u64>,
     pub duration: f64,
     pub artwork: Option<Arc<eframe::egui::ColorImage>>,
@@ -54,7 +54,6 @@ impl NowPlaying {
         if self.playback_type == MediaKind::Video {
             return MediaKind::Video;
         }
-        // 部分浏览器把所有媒体都上报为音乐，补充识别明确的视频页面标题。
         let title = self.title.trim().to_lowercase();
         if [" - 抖音", " - youtube", "_哔哩哔哩_bilibili", " - 哔哩哔哩"]
             .iter()
@@ -87,7 +86,6 @@ impl NowPlaying {
             if ["youtube", "bilibili", "抖音", "哔哩哔哩"].contains(&album.as_str()) {
                 return MediaKind::Video;
             }
-            // 视频作者也可能被放进 Artist；浏览器缺少专辑信息时不自动认作歌曲。
             if album.is_empty() {
                 return MediaKind::Unknown;
             }
@@ -142,7 +140,6 @@ struct ArtworkCache {
     worker: Option<ArtworkWorker>,
     pending: bool,
     next_poll: Option<std::time::Instant>,
-    /// 连续读到同一张封面的次数；稳定后放慢复查，每次复查都要向播放器发 3 个系统请求并读出整张图。
     unchanged: u8,
 }
 
@@ -215,7 +212,6 @@ impl ArtworkCache {
                 Err(std::sync::mpsc::TryRecvError::Empty) => {}
             }
         }
-        // 最多一个封面读取任务；旧任务结束后只采纳当前歌曲的结果。
         if !self.pending && self.next_poll.is_none_or(|at| now >= at) {
             let interval = match (&self.image, self.unchanged) {
                 (None, _) => 500,
@@ -244,7 +240,6 @@ impl ArtworkCache {
             self.next_poll = None;
             self.unchanged = 0;
         }
-        // 封面可能晚于歌名更新；每次检查内容，只在图片变化时重新解码。
         if let Some(bytes) = load() {
             if bytes == self.bytes {
                 self.unchanged = self.unchanged.saturating_add(1);
@@ -295,7 +290,6 @@ fn media_result<T: windows::core::RuntimeType + 'static>(
     media_result_in(&crate::resources::ASYNC, start)
 }
 
-/// 封面请求单独计数：播放器的封面接口卡住时，最多占满封面自己的名额，不影响歌名、进度和播放控制。
 #[cfg(windows)]
 fn artwork_result<T: windows::core::RuntimeType + 'static>(
     start: impl FnOnce() -> windows::core::Result<windows::Foundation::IAsyncOperation<T>>,
@@ -308,7 +302,6 @@ fn media_result_in<T: windows::core::RuntimeType + 'static>(
     lane: &'static crate::resources::Lane,
     start: impl FnOnce() -> windows::core::Result<windows::Foundation::IAsyncOperation<T>>,
 ) -> Option<T> {
-    // 必须在创建 WinRT 请求之前占用名额；超时请求保留到确认终止。
     thread_local! {static RETRY_AT:std::cell::Cell<Option<std::time::Instant>>=const{std::cell::Cell::new(None)};}
     let now = std::time::Instant::now();
     if RETRY_AT.with(|at| at.get().is_some_and(|at| now < at)) {
@@ -382,7 +375,6 @@ pub fn shared() -> Shared {
 fn choose_media(system: Option<NowPlaying>, native: Option<NowPlaying>) -> Option<NowPlaying> {
     if let (Some(system), Some(native)) = (&system, &native) {
         if system.source.eq_ignore_ascii_case("cloudmusic.exe") {
-            // SMTC 与网易云日志的歌手分隔符、合唱署名写法不同；按规范化后的歌名与歌手集合判断，避免同一首歌丢失 song_id。
             let same = crate::lyrics::same_song(
                 &system.title,
                 &system.artist,
@@ -440,7 +432,6 @@ fn choose_media_for_source(
     previous: &str,
     native_pending: bool,
 ) -> Option<NowPlaying> {
-    // 暂停或载入下一首时保留控制对象，其他客户端开始播放则照常切换。
     if previous.eq_ignore_ascii_case("cloudmusic.exe")
         && !system.as_ref().is_some_and(|m| m.playing && m.is_music())
         && (native.is_some() || native_pending)
@@ -485,7 +476,6 @@ fn query_system(artwork: &mut ArtworkCache) -> Result<Option<NowPlaying>, ()> {
     if sessions.is_empty() {
         return Ok(None);
     }
-    // 先比较全部会话；视频不能遮挡音乐，封面只为最终选中的会话读取。
     let previous = artwork
         .system
         .as_ref()
@@ -507,7 +497,6 @@ fn query_system(artwork: &mut ArtworkCache) -> Result<Option<NowPlaying>, ()> {
         })
         .min_by_key(|(_, media)| media_rank(media))
         .ok_or(())?;
-    // 当前播放器正在重载时，不把暂停中的另一客户端当成用户切换了播放源。
     if media_rank(&media) > 0 && unreadable_previous {
         return Err(());
     }
@@ -574,7 +563,6 @@ fn read_session(
         if let Ok(p) = tl.Position() {
             position = p.Duration as f64 / 10_000_000.0;
         }
-        // SMTC 只在事件发生时更新 Position；播放中要按 LastUpdatedTime 外推到「现在」。
         if playing {
             if let Ok(at) = tl.LastUpdatedTime() {
                 let now =
@@ -648,7 +636,6 @@ pub enum Transport {
     Toggle,
     Next,
     Prev,
-    /// 跳到第几秒。
     Seek(f64),
 }
 
@@ -679,7 +666,6 @@ impl ControlWorker {
         crate::resources::CONTROL.spawn(move || {
             let _apartment = init_winrt();
             while let Ok(first) = rx.recv() {
-                // 拖动进度条会连续排入多次跳转；QQ 音乐的跳转要遍历播放器界面并等待回读，只执行同一播放器的最后一次。
                 let mut batch = vec![first];
                 while let Ok(next) = rx.try_recv() {
                     batch.push(next);
@@ -708,6 +694,7 @@ impl ControlWorker {
         })?;
         Some(Self { requests })
     }
+    #[allow(clippy::result_unit_err)]
     pub fn submit(
         &self,
         command: Transport,
@@ -729,7 +716,6 @@ impl ControlWorker {
     }
 }
 
-/// 控制当前媒体会话（播放/暂停、上一首、下一首）。
 #[cfg(windows)]
 pub fn control(cmd: Transport, source: &str) {
     if let Transport::Seek(seconds) = cmd {
@@ -745,7 +731,7 @@ pub fn control(cmd: Transport, source: &str) {
                 session
                     .SourceAppUserModelId()
                     .ok()
-                    .is_some_and(|id| id.to_string() == source)
+                    .is_some_and(|id| id == source)
             })
         });
     let Some(session) = session else {
@@ -767,9 +753,6 @@ pub fn control(cmd: Transport, source: &str) {
 #[cfg(not(windows))]
 pub fn control(_cmd: Transport, _source: &str) {}
 
-/// Bring the app that owns a browser/video media session back to the
-/// foreground. The website keeps its own tab and playback state; this avoids
-/// guessing a URL from media metadata, which SMTC does not expose.
 #[cfg(windows)]
 pub fn activate_source(source: &str) -> Result<(), String> {
     use std::os::windows::ffi::OsStringExt;
@@ -866,7 +849,6 @@ pub fn activate_source(_source: &str) -> Result<(), String> {
     Err("仅 Windows 支持恢复媒体窗口".into())
 }
 
-/// 跳转在工作线程执行；专用回退必须回读实际位置，避免播放器接口假成功。
 #[cfg(windows)]
 pub fn seek(seconds: f64, source: &str) -> bool {
     if !seconds.is_finite() || seconds < 0.0 {
@@ -944,7 +926,6 @@ pub fn seek(seconds: f64, source: &str) -> bool {
                 (total - duration).abs() < 1.5
                     && seek_arrived(current, target, start.elapsed().as_secs_f64())
             }) {
-                // QQ 的原生进度条会自动续播；确认续播事件后再恢复暂停，避免命令被覆盖。
                 if paused_qq && session.as_ref().and_then(|s|s.GetPlaybackInfo().ok()).and_then(|i|i.PlaybackStatus().ok())
                     ==Some(windows::Media::Control::GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing){
                     if !pause_requested {
@@ -999,7 +980,6 @@ fn init_winrt() -> MediaApartment {
 #[cfg(not(windows))]
 fn init_winrt() {}
 
-// 音乐客户端可能重复上报同一播放位置，保留该位置首次采样的时间。
 #[derive(Default)]
 struct PlaybackClock {
     previous: Option<NowPlaying>,
@@ -1053,7 +1033,6 @@ fn kugou_repeated_samples_do_not_freeze_lyrics() {
             assert_eq!(lyrics.index_at(position as f32), Some(1));
         }
     }
-    // 新位置、暂停、恢复、切歌和切换播放器必须建立新的采样基准。
     for (position, playing, title, source) in [
         (12.0, true, "歌曲", "KuGou.exe"),
         (12.0, false, "歌曲", "KuGou.exe"),
@@ -1127,7 +1106,6 @@ fn other_clients_repeated_samples_keep_the_clock_running() {
             clock.update(&mut media);
             assert_eq!(media.sampled_at, Some(now), "{source} 状态变化必须重置时钟");
         }
-        // 会话消失或缺少有效时间轴后，恢复时不能沿用旧计时。
         clock.update(&mut NowPlaying::default());
         let now = start + Duration::from_secs(30);
         media.sampled_at = Some(now);
@@ -1153,7 +1131,6 @@ impl MediaMemory {
             return;
         }
         if media.title.trim().is_empty() {
-            // 会话重建时可短暂返回空值；保留窗口不刷新期限，真正退出最多延迟两秒收起。
             if let Some((old, at)) = &self.last {
                 if now.duration_since(*at) <= Duration::from_secs(2)
                     && (media.source.is_empty() || media.source == old.source)
@@ -1167,7 +1144,6 @@ impl MediaMemory {
         }
         let complete = !media.artist.trim().is_empty() && media.duration > 0.0;
         if let Some((old, at)) = &self.last {
-            // 一路来源暂时没有 song_id（SMTC 不提供）不算换歌；两路都有且不同才是另一首。
             let same = media.source == old.source
                 && media.title == old.title
                 && (media.song_id.is_none()
@@ -1186,7 +1162,6 @@ impl MediaMemory {
                 if media.duration <= 0.0 {
                     media.duration = old.duration;
                 }
-                // 同一歌曲的秒数舍入波动不代表换歌，避免重置歌词和重复请求。
                 if (media.duration - old.duration).abs() <= 1.0 {
                     media.duration = old.duration;
                 }
@@ -1219,7 +1194,6 @@ impl Drop for Poller {
     }
 }
 
-/// 后台线程：刷新正在播放；持有者销毁后停止，不在界面线程等待 COM 返回。
 pub fn spawn_poller(state: Shared, ctx: eframe::egui::Context) -> Poller {
     let enabled = Arc::new(std::sync::atomic::AtomicBool::new(true));
     let active = enabled.clone();
@@ -1315,11 +1289,8 @@ mod tests {
             Some("正常歌名")
         );
     }
-    /// 控制线程全进程只允许一个，用到它的测试需要串行。
     static CONTROL_TESTS: Mutex<()> = Mutex::new(());
-    /// 封面线程全进程最多两个，其中一项测试会故意把它们占满；用到封面线程的测试需要串行，否则并行时会互相抢名额而误报。
     static ARTWORK_TESTS: Mutex<()> = Mutex::new(());
-    /// 上一个测试释放工作对象后，后台线程要稍后才退出并交还名额；开始前先等名额空出来。
     fn wait_lane_idle(lane: &'static crate::resources::Lane) {
         let until = std::time::Instant::now() + Duration::from_secs(5);
         while lane.active() > 0 && std::time::Instant::now() < until {
@@ -1424,7 +1395,6 @@ mod tests {
     }
     #[test]
     fn resource_poller_stops_even_when_shared_state_is_still_owned() {
-        // 采样线程会建自己的封面缓存并占用封面名额。
         let _serial = ARTWORK_TESTS.lock().unwrap_or_else(|e| e.into_inner());
         wait_lane_idle(&crate::resources::ARTWORK);
         let state = shared();
@@ -2258,7 +2228,6 @@ mod tests {
                 Some(cover_bytes(eframe::egui::Color32::RED))
             })
             .unwrap();
-        // 网页可能先提供占位图，随后才发布真实封面。
         let actual = cache
             .get("song".into(), || {
                 Some(cover_bytes(eframe::egui::Color32::BLUE))

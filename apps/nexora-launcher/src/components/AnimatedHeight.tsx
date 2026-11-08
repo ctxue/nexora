@@ -6,11 +6,6 @@ interface AnimatedHeightProps {
   animate?: boolean;
 }
 
-/**
- * Animates height changes after the first layout pass. The first render is
- * intentionally unanimated (height: auto) so showing the window never looks
- * like the panel is growing from zero.
- */
 export function AnimatedHeight({
   children,
   className = "",
@@ -42,8 +37,6 @@ export function AnimatedHeight({
     observer.observe(node);
     measure();
 
-    // Only enable transitions after the initial height has been committed.
-    // This prevents a visible 0 -> content-height animation on first show.
     readyFrame = requestAnimationFrame(() => setReady(true));
 
     return () => {

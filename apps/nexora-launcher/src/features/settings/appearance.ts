@@ -11,10 +11,6 @@ function prefersDark(): boolean {
   );
 }
 
-/**
- * Resolves the configured theme, following the operating system when the user
- * picked "system".
- */
 export function useResolvedTheme(mode: ThemeMode): ResolvedTheme {
   const [systemTheme, setSystemTheme] = useState<ResolvedTheme>(() =>
     prefersDark() ? "dark" : "light",
@@ -32,10 +28,6 @@ export function useResolvedTheme(mode: ThemeMode): ResolvedTheme {
   return mode === "system" ? systemTheme : mode;
 }
 
-/**
- * Applies the stored appearance before the first render so a dark-theme launch
- * never flashes the light palette.
- */
 export function applyInitialAppearance() {
   const settings = loadSettings();
   const dark =

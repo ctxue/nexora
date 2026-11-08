@@ -1,53 +1,93 @@
+<div align="center">
+
 # NEXORA
 
-NEXORA 是一个多产品工作区。每个产品拥有独立的源码、运行时、数据目录、测试和发布流程，根目录只负责跨产品编排。
+**两个独立的 Windows 桌面产品：快速启动器与桌面信息岛屿。**
+
+搜索应用、文件和命令，或把音乐、消息、邮件和系统状态收进屏幕边缘。
+
+</div>
+
+<table>
+  <tr>
+    <td width="55%" align="center">
+      <img src="apps/nexora-launcher/docs/screenshots/launcher-search.png" alt="NEXORA 启动器" width="520"><br>
+      <sub><b>NEXORA</b> · 应用、文件与命令启动器</sub>
+    </td>
+    <td width="45%" align="center">
+      <img src="docs/images/nexora-isle.png" alt="NEXORA ISLE 岛屿" width="390"><br>
+      <sub><b>NEXORA ISLE · 岛屿</b> · 桌面信息岛屿</sub>
+    </td>
+  </tr>
+</table>
 
 ## 产品
 
-| 产品 | 目录 | 说明 |
+| 产品 | 定位 | 主要能力 | 目录 |
+| --- | --- | --- | --- |
+| **NEXORA** | 键盘优先的 Windows 启动器 | 应用/文件/命令搜索、自定义命令、文件索引、插件、剪贴板历史 | [`apps/nexora-launcher`](apps/nexora-launcher) |
+| **NEXORA ISLE · 岛屿** | 屏幕边缘的桌面信息岛屿 | 媒体与歌词、微信/QQ/系统通知、邮件验证码、图片剪贴板、系统监控 | [`apps/nexora-isle`](apps/nexora-isle) |
+
+两个产品拥有独立的运行时、数据目录、测试和发布包。安装其中一个不要求安装另一个。
+
+## NEXORA
+
+NEXORA 通过全局快捷键唤出，集中搜索应用、文件和内置命令。界面支持浅色/深色主题、紧凑和展开模式、命令作用域、拼音和首字母匹配。
+
+<p align="center">
+  <img src="apps/nexora-launcher/docs/screenshots/launcher-dark.png" alt="NEXORA 深色主题" width="620">
+</p>
+
+亮点：
+
+- `Alt + Space` 快速唤出，支持键盘完整操作。
+- 统一枚举开始菜单、AppsFolder、绿色应用和文件索引。
+- 自定义命令支持网页、文件、程序和指定浏览器。
+- 插件通过独立进程和 JSON-RPC 提供搜索结果。
+- 剪贴板文本使用当前 Windows 用户的 DPAPI 加密保存。
+
+## NEXORA ISLE · 岛屿
+
+岛屿默认以鼠标点击展开，可切换为悬停展开；展开后提供音乐、视频、系统监控、文件口袋、图片、剪贴板和邮箱页面。
+
+<p align="center">
+  <img src="docs/images/nexora-isle.png" alt="NEXORA ISLE 岛屿界面" width="620">
+</p>
+
+亮点：
+
+- 点击或悬停展开，移出后立即收起。
+- 支持刘海、胶囊以及顶部/左右边缘停靠。
+- 可视化布局编辑器支持常驻组件和功能页面拖拽排序。
+- 微信、QQ 和 Windows 系统通知独立控制，默认开启。
+- 邮箱账号保存在本机，凭据进入 Windows 凭据管理器，启动后自动重连。
+- 图片剪贴板仅保存在内存中，支持独立查看器和右键另存为 PNG。
+
+## 技术栈
+
+| 层 | NEXORA | NEXORA ISLE |
 | --- | --- | --- |
-| **NEXORA** | [`apps/nexora-launcher`](apps/nexora-launcher) | Windows 应用、文件和命令启动器 |
-| **NEXORA ISLE · 星屿** | [`apps/nexora-isle`](apps/nexora-isle) | 屏幕边缘的桌面信息岛 |
+| 桌面外壳 | Tauri 2 | Rust + eframe/egui |
+| 界面 | React 19 + TypeScript + Vite | 自绘 egui 面板 |
+| Windows 集成 | Win32 + WebView2 | Win32、DWM、SMTC、Windows Notifications |
+| 数据 | localStorage + DPAPI 文件 | 本地配置文件 + Windows Credential Manager |
 
-两个产品互不要求另一个产品安装或运行。NEXORA ISLE 从早期版本升级时会自动迁移用户数据和邮件凭据。
+## 快速开始
 
-## 工作区结构
+环境要求：
 
-```text
-nexora/
-├─ apps/
-│  ├─ nexora-launcher/
-│  └─ nexora-isle/
-├─ docs/
-│  └─ architecture/
-├─ scripts/
-│  ├─ products.ps1
-│  ├─ clean-workspace.ps1
-│  ├─ check-workspace-hygiene.ps1
-│  └─ tests/
-├─ products.psd1
-├─ pnpm-workspace.yaml
-└─ package.json
-```
-
-`products.psd1` 是产品清单。根级命令只读取清单并调用对应产品自己的脚本，不包含针对具体产品的构建逻辑。未来新增产品时，只需增加 `apps/<product>` 目录和一条清单配置。
-
-## 安装依赖
+- Windows 10/11 x64
+- Node.js 20+ 与 pnpm
+- Rust stable MSVC
+- Visual Studio C++ Build Tools 与 Windows SDK
 
 ```powershell
 pnpm install
-```
-
-Rust 产品使用本机 Cargo 工具链；启动器同时需要 Node.js、pnpm、Rust MSVC、Visual Studio C++ Build Tools 和 Windows SDK。
-
-## 开发
-
-```powershell
 pnpm dev:launcher
 pnpm dev:isle
 ```
 
-## 独立调试构建
+生成可直接运行的调试版本：
 
 ```powershell
 pnpm debug:launcher
@@ -55,9 +95,14 @@ pnpm debug:isle
 pnpm debug:all
 ```
 
-启动器调试产物位于 `apps/nexora-launcher/src-tauri/target/debug/nexora.exe`，Isle 调试产物位于 `apps/nexora-isle/target/debug/nexora-isle.exe`。
+构建产物：
 
-## 测试
+```text
+apps/nexora-launcher/src-tauri/target/debug/nexora.exe
+apps/nexora-isle/target/debug/nexora-isle.exe
+```
+
+## 测试与发布
 
 ```powershell
 pnpm check:workspace
@@ -67,33 +112,43 @@ pnpm test:isle
 pnpm test:all
 ```
 
-`check:workspace` 会扫描所有文件和目录名，包括 `target`、依赖缓存和发布目录；发现旧产品构建名称时直接失败。
-
-## 独立与联合打包
+打包全部产品：
 
 ```powershell
-pnpm package:launcher
-pnpm package:isle
 pnpm package:all
 ```
 
-安装包与便携 ZIP 统一输出到根目录 `release/`。打包全部产品后只保留四个文件：
+安装包和便携 ZIP 输出到根目录 `release/`：
 
 ```text
-release/
-├─ NEXORA_LAUNCHER_<版本>_x64_setup.exe
-├─ NEXORA_LAUNCHER_<版本>_portable.zip
-├─ NEXORA_ISLE_<版本>_x64_setup.exe
-└─ NEXORA_ISLE_<版本>_portable.zip
+NEXORA_LAUNCHER_<版本>_x64_setup.exe
+NEXORA_LAUNCHER_<版本>_portable.zip
+NEXORA_ISLE_<版本>_x64_setup.exe
+NEXORA_ISLE_<版本>_portable.zip
 ```
 
-## 清理
+## 项目结构
 
-```powershell
-pnpm clean
-pnpm clean:all
+```text
+nexora/
+├─ apps/
+│  ├─ nexora-launcher/     # NEXORA 启动器
+│  └─ nexora-isle/         # NEXORA ISLE · 岛屿
+├─ docs/
+│  ├─ architecture/        # 跨产品架构
+│  └─ images/              # GitHub README 展示图
+├─ scripts/                # 工作区编排、清理与检查
+├─ products.psd1           # 产品清单
+├─ package.json
+└─ pnpm-workspace.yaml
 ```
 
-`clean:all` 同时删除依赖目录；下一次构建前需要重新运行 `pnpm install`。
+产品工作区约束见 [`docs/architecture/product-workspace.md`](docs/architecture/product-workspace.md)。
 
-跨产品约束和新增产品步骤见 [`docs/architecture/product-workspace.md`](docs/architecture/product-workspace.md)。
+## 隐私
+
+NEXORA 和岛屿均在本机完成搜索、状态读取和配置保存。网络功能只在歌词查询、邮箱收取、插件执行和用户主动检查更新时使用；邮箱凭据由 Windows 凭据管理器保护。
+
+## 许可
+
+项目采用 [MIT License](LICENSE)。第三方字体、图标和依赖的许可说明保存在各产品目录及发布包中。

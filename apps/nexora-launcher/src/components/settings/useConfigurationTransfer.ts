@@ -6,11 +6,6 @@ import type { Settings } from "../../features/settings/types";
 import { useI18n } from "../../i18n";
 import { platform } from "../../platform/tauri";
 
-/**
- * Export/import of the whole configuration as JSON, including the native state
- * (shortcut, autostart, tray language) that lives outside the webview and the
- * user's custom commands.
- */
 export function useConfigurationTransfer({
   settings,
   commands,
@@ -55,8 +50,6 @@ export function useConfigurationTransfer({
     onChange(loaded.settings);
     if (loaded.hasCommands) onCommandsChange(loaded.commands);
 
-    // A configuration also carries native state: re-apply the shortcut,
-    // auto-start, and tray language so the machine matches the file.
     await Promise.allSettled([
       platform.setGlobalShortcut(loaded.settings.shortcut),
       platform.setLaunchAtStartup(loaded.settings.launchAtStartup),

@@ -1,5 +1,3 @@
-//! Retained NEXORA ISLE pages and legacy settings migration.
-
 pub const MUSIC: usize = 0;
 pub const SHELF: usize = 1;
 pub const CLIPBOARD: usize = 2;
@@ -45,8 +43,6 @@ pub fn from_legacy(index: usize) -> Option<usize> {
     }
 }
 
-/// The previous four-page release used music, shelf, tasks, and mail. Tasks were
-/// removed, so migrate its positional settings without leaving a hole.
 pub fn migrate_v4_order(legacy: [usize; 4]) -> [usize; COUNT] {
     let map = |index| match index {
         0 => Some(MUSIC),
@@ -95,7 +91,6 @@ pub fn migrate_v3_order(legacy: [usize; 3]) -> [usize; COUNT] {
             order.push(page);
         }
     }
-    // Keep the brand-new Clipboard page next to Pocket on first migration.
     if let (Some(shelf), Some(clipboard)) = (
         order.iter().position(|page| *page == SHELF),
         order.iter().position(|page| *page == CLIPBOARD),
@@ -153,8 +148,6 @@ pub fn migrate_legacy_visibility(raw: &[u8]) -> [bool; COUNT] {
     visible
 }
 
-/// Previous releases saved exactly four live pages. Preserve that order and
-/// insert the two new media categories next to their related pages.
 pub fn migrate_current_v4_order(legacy: [usize; 4]) -> [usize; COUNT] {
     let mut order = Vec::with_capacity(COUNT);
     for page in legacy {

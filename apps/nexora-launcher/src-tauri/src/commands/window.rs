@@ -1,5 +1,3 @@
-//! Window-level commands: dragging the launcher and quitting the app.
-
 use tauri::{AppHandle, Manager, WebviewWindow};
 
 use crate::{launcher::watch_drag_release, state::LauncherState};

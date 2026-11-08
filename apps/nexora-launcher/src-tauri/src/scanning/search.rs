@@ -1,8 +1,5 @@
-//! Fuzzy matching used by the file index.
-
 use crate::{models::FileEntry, state::FileIndex};
 
-/// Scores `name` against a query using initials and subsequence matching.
 fn fuzzy_name_score(query: &str, name: &str) -> i32 {
     let compact_query: String = query
         .chars()
@@ -53,7 +50,6 @@ fn fuzzy_name_score(query: &str, name: &str) -> i32 {
     0
 }
 
-/// Returns the best `limit` matches for `query`, best first.
 pub fn search_files(query: &str, limit: usize, index: &FileIndex) -> Vec<FileEntry> {
     let query = query.trim().to_lowercase();
     if query.is_empty() {

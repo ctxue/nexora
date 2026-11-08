@@ -1,4 +1,3 @@
-//! 按显示屏的物理坐标居中岛体，透明画布的额外宽度不参与居中。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Bounds {
     pub left: i32,
@@ -147,11 +146,8 @@ pub fn island_origin(m: Bounds, island_width: f32, scale: f32) -> Option<(i32, i
     Some((x.clamp(i32::MIN as f64, i32::MAX as f64) as i32, m.top))
 }
 
-/// 岛体可见内容（展开面板、肩部与阴影）距中心的最大半宽，逻辑点。
-/// 水平偏移以此为界，保证展开后面板仍完整留在屏幕内。
 pub const ISLAND_HALF_EXTENT: f32 = 240.0;
 
-/// 岛体中心能离开屏幕中线的最大距离（物理像素）。屏幕太窄时为 0，只能居中。
 pub fn island_travel(m: Bounds, scale: f32) -> f64 {
     if m.right <= m.left || !scale.is_finite() || scale <= 0.0 {
         return 0.0;
@@ -159,8 +155,6 @@ pub fn island_travel(m: Bounds, scale: f32) -> f64 {
     ((m.right as f64 - m.left as f64) / 2.0 - ISLAND_HALF_EXTENT as f64 * scale as f64).max(0.0)
 }
 
-/// 按水平偏移定位：`offset` 为 -1（最左）..0（居中）..1（最右），按可移动范围的比例换算，
-/// 所以换屏、改系统缩放或调整岛体大小后仍保持相同的相对位置。
 pub fn island_origin_offset(
     m: Bounds,
     island_width: f32,
@@ -180,8 +174,6 @@ pub fn island_origin_offset(
     ))
 }
 
-/// 左右停靠：画布贴着屏幕左 / 右边，竖直方向按 `offset`（-1 最上 … 0 居中 … 1 最下）移动，
-/// 可移动范围保证展开面板始终完整留在屏幕内。返回画布左上角（物理像素）。
 pub fn side_origin(
     m: Bounds,
     dock: crate::model::Dock,
@@ -437,7 +429,9 @@ mod tests {
             );
         }
         assert_eq!(
-            selected(&[primary.clone()], "external").unwrap().id,
+            selected(std::slice::from_ref(&primary), "external")
+                .unwrap()
+                .id,
             "internal"
         );
         assert_eq!(
@@ -514,7 +508,6 @@ mod tests {
     }
 }
 
-/// 只有NEXORA ISLE所在屏幕的前台全屏窗口才触发隐藏。
 pub fn hide_for_fullscreen(
     enabled: bool,
     fullscreen: Option<Bounds>,

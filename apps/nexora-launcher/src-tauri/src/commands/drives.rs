@@ -1,11 +1,7 @@
-//! Logical drives, so a query like `D`, `D:` or `D://` can open the drive.
-
 use serde::Serialize;
 use windows::core::PCWSTR;
 use windows::Win32::Storage::FileSystem::{GetDriveTypeW, GetLogicalDrives};
 
-// GetDriveTypeW returns one of these values (winbase.h). Only the kinds that
-// can be opened as a folder are exposed; empty optical drives are skipped.
 const DRIVE_REMOVABLE: u32 = 2;
 const DRIVE_FIXED: u32 = 3;
 const DRIVE_REMOTE: u32 = 4;
@@ -14,11 +10,8 @@ const DRIVE_RAMDISK: u32 = 6;
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DriveEntry {
-    /// Drive letter without the colon, e.g. `D`.
     pub letter: String,
-    /// Root path, e.g. `D:\`.
     pub path: String,
-    /// `fixed` / `removable` / `remote` / `ramdisk`.
     pub kind: String,
 }
 

@@ -1,5 +1,3 @@
-//! Shared visual primitives for compact mailbox-style lists.
-
 use crate::paint::{Card, H};
 use crate::theme::W;
 use eframe::egui::Color32;

@@ -13,7 +13,6 @@ import type { Settings } from "./types";
 
 export { applyInitialAppearance };
 
-/** Reads the configuration, keeps the two windows in sync, and applies it. */
 export function useSettings() {
   const [settings, setSettings] = useState<Settings>(loadSettings);
   const resolvedTheme = useResolvedTheme(settings.theme);
@@ -26,7 +25,6 @@ export function useSettings() {
     });
   }, []);
 
-  // Keep the launcher and the separate settings window in sync.
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
       if (event.key === SETTINGS_KEY && event.newValue) {
@@ -43,8 +41,6 @@ export function useSettings() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = resolvedTheme;
-    // The settings window keeps native decorations, so the native title bar has
-    // to be recolored to match the page instead of the system default.
     void platform.setAppTheme(resolvedTheme).catch(() => {});
   }, [resolvedTheme]);
 

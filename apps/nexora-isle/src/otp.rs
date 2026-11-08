@@ -1,8 +1,3 @@
-//! 验证码提取。
-//!
-//! 加权打分而不是单条正则：单正则会把你订单号、金额、电话当验证码。
-//! 中文关键词表按国内邮件场景配置，门槛 65 分。
-
 use regex::Regex;
 use std::sync::OnceLock;
 
@@ -12,7 +7,6 @@ pub struct Code {
     pub score: i32,
 }
 
-/// 上岛门槛：低于这个分数只当作普通邮件。
 pub const THRESHOLD: i32 = 65;
 
 fn strong() -> &'static Regex {
@@ -42,7 +36,6 @@ fn weak() -> &'static Regex {
 fn candidate() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
     R.get_or_init(|| {
-        // 字母前缀、带分隔的 3-4 位分组、4-8 位数字、4-8 位字母数字。
         Regex::new(concat!(
             r"(?:[A-Za-z]{1,3}-)?",
             r"(?:\d{3,4}[- ]\d{3,4}|\d{4}-\d{4}|[A-Za-z0-9]{3,4}-[A-Za-z0-9]{3,4}|\d{4,8}|[A-Za-z0-9]{4,8})"
@@ -56,7 +49,6 @@ fn clock() -> &'static Regex {
     R.get_or_init(|| Regex::new(r"\d{1,2}:\d{2}").expect("time regex"))
 }
 
-/// 全角转半角、去零宽字符、全角空格归一。
 fn normalize(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
@@ -145,7 +137,6 @@ const EXPIRE_WORDS: &[&str] = &[
     "小时内",
 ];
 
-/// 从主题 + 正文里挑出最像验证码的一个；`emphasized` 是 HTML 里加粗/大字号片段的纯文本。
 pub fn extract(subject: &str, body: &str, emphasized: &[String]) -> Option<Code> {
     let subject = normalize(subject);
     let body = normalize(&take_chars(body, 6000));
@@ -157,7 +148,6 @@ pub fn extract(subject: &str, body: &str, emphasized: &[String]) -> Option<Code>
     for m in candidate().find_iter(&hay) {
         let prev = hay[..m.start()].chars().next_back();
         let next = hay[m.end()..].chars().next();
-        // 只认 ASCII 字母数字边界：中文紧贴验证码是常态，不能当边界外丢弃。
         if prev.is_some_and(|c| c.is_ascii_alphanumeric())
             || next.is_some_and(|c| c.is_ascii_alphanumeric())
         {
@@ -169,8 +159,6 @@ pub fn extract(subject: &str, body: &str, emphasized: &[String]) -> Option<Code>
         else {
             continue;
         };
-        // 没有强信号（强关键词 / 主题 / HTML 强调 / 独占行 / 冒号后）就不算验证码：
-        // 宁可不显示，也不能把订单号、金额之类的数字放大展示。
         if !strong_signal {
             continue;
         }
@@ -248,7 +236,6 @@ fn score_at(
     let b60 = before(hay, start, 60);
     let a40 = after(hay, end, 40);
 
-    // ---- 硬丢弃：URL / 邮箱 / 日期时间 / 电话 / 订单金额卡号 ----
     let token = {
         let left = hay[..start]
             .char_indices()
@@ -276,12 +263,9 @@ fn score_at(
     if has(&around(hay, start, end, 6), MONEY_WORDS) {
         return None;
     }
-    // 订单/电话/会议号这类词只认紧邻的前文与极短的后续：真实验证码后面常跟
-    // “如非本人操作…订单号…”这类无关尾巴，窗口放宽会把真码误杀。
     if has(&before(hay, start, 20), ORDER_WORDS) || has(&after(hay, end, 8), ORDER_WORDS) {
         return None;
     }
-    // 4 位年份：直接判负，掉到门槛以下
     if len == 4 && !mixed {
         if let Ok(y) = core.parse::<u32>() {
             if (1900..=2100).contains(&y) {
@@ -290,7 +274,6 @@ fn score_at(
         }
     }
 
-    // ---- 正向信号 ----
     let strong_before = strong().is_match(&b40);
     if strong_before {
         score += 40;
@@ -346,13 +329,11 @@ fn score_at(
     if has(&around(hay, start, end, 40), PROMO_WORDS) {
         score -= 30;
     }
-    // 强信号：任何一个成立才允许上岛展示。
     let strong_signal =
         strong_before || strong().is_match(&a40) || in_subject || is_emph || own_line || colon;
     Some((score, strong_signal))
 }
 
-/// HTML → 纯文本：去脚本样式、块级标签转换行、解常见实体、压缩空白。
 pub fn html_to_text(html: &str) -> String {
     static SCRIPT: OnceLock<Regex> = OnceLock::new();
     static TAGS: OnceLock<Regex> = OnceLock::new();
@@ -385,7 +366,6 @@ pub fn html_to_text(html: &str) -> String {
     out
 }
 
-/// HTML 里被「当码呈现」的片段：加粗、标题、大字号 span。
 pub fn emphasized(html: &str) -> Vec<String> {
     static TAGS: OnceLock<Regex> = OnceLock::new();
     let re = TAGS.get_or_init(|| {

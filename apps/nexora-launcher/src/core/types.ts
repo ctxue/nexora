@@ -71,7 +71,6 @@ export interface LauncherItem {
 }
 
 export interface ResultGroup {
-  /** Group key; built-ins use "app" / "command" / "file", plugins add their own. */
   id: string;
   label: string;
   color: string;

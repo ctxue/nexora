@@ -1,4 +1,7 @@
-//! NOMI expressions and scene-aware expression selection.
+//! NOMI expression state and scene-aware animation selection.
+//!
+//! Expressions are presentation-only. Pointer gaze, blinking, and idle
+//! rotation must not affect the island's functional state.
 
 use crate::anim::{approach, hash01, lerp, smoothstep, Spring};
 use crate::paint::Card;
@@ -110,7 +113,6 @@ pub(crate) fn gaze_for_cursor(cursor: Option<eframe::egui::Pos2>, cx: f32) -> [f
     ]
 }
 
-/// 0 = 完全睁开，1 = 完全合眼。
 fn blink_fraction(phase: f32) -> f32 {
     const CLOSE_END: f32 = 0.075;
     const HOLD_END: f32 = 0.12;
@@ -315,8 +317,6 @@ fn draw_expression_frame(
         return;
     }
 
-    // Heart and star expressions contain no mouth, so center the complete
-    // eye-and-symbol composition inside the face instead of the upper half.
     let face_y = face_anchor_y(expression, cy);
     draw_happy_eyes(c, cx, face_y - 3.5, white);
     let pulse = (t as f32 * 2.2).sin() * 0.45;

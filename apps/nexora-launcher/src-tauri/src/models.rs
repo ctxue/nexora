@@ -1,5 +1,3 @@
-//! Payloads exchanged with the frontend (serialized with camelCase keys).
-
 use serde::Serialize;
 
 #[derive(Clone, Serialize)]

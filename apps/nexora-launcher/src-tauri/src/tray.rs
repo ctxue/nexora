@@ -1,5 +1,3 @@
-//! Tray icon and its localized menu.
-
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -53,8 +51,6 @@ pub fn setup(app: &tauri::App) -> tauri::Result<()> {
             }
         });
 
-    // Embed the tray icon explicitly. Relying on the executable's cached icon
-    // made Windows keep showing the previous design.
     builder = builder.icon(tauri::image::Image::from_bytes(include_bytes!(
         "../icons/tray-icon.png"
     ))?);
@@ -63,7 +59,6 @@ pub fn setup(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Rebuilds the menu after a language change.
 pub fn set_language(app: &AppHandle, language: &str) -> Result<(), String> {
     let tray = app
         .tray_by_id(TRAY_ID)

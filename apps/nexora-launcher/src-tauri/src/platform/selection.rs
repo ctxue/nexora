@@ -1,5 +1,3 @@
-//! Best-effort capture of text selected in the previously focused app.
-
 use windows::{
     core::Result,
     Win32::{

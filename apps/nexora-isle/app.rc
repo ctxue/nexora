@@ -13,10 +13,10 @@ BEGIN
     BEGIN
         BLOCK "080404b0"
         BEGIN
-            VALUE "FileDescription", "NEXORA ISLE · 星屿"
+            VALUE "FileDescription", "NEXORA ISLE · 岛屿"
             VALUE "InternalName", "NexoraIsle"
             VALUE "OriginalFilename", "nexora-isle.exe"
-            VALUE "ProductName", "NEXORA ISLE · 星屿"
+            VALUE "ProductName", "NEXORA ISLE · 岛屿"
             VALUE "ProductVersion", "0.1.0"
             VALUE "FileVersion", "0.1.0"
         END

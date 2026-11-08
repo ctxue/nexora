@@ -8,7 +8,6 @@ import {
   saveCommands,
 } from "./storage";
 
-/** Custom commands shared by the launcher and the settings window. */
 export function useCommands() {
   const [commands, setCommandsState] = useState<CustomCommand[]>(loadCommands);
 

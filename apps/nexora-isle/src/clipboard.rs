@@ -1,22 +1,14 @@
-//! 剪贴板记录：最近复制的文字和图片，在岛屿的「剪贴板」与「图片」分类里查看。
+//! Clipboard history with explicit privacy boundaries.
 //!
-//! - 文字只记录文本；图片从 CF_DIB/CF_DIBV5 解码后以 PNG 保存在本机。
-//! - 最近记录与固定条目都保存在本机 `clipboard.json`，图片正文在
-//!   `clipboard-images/`，不会上传或混入设置导出。
-//! - 密码管理器等标记为「不进剪贴板历史」的内容一律跳过
-//!   （`ExcludeClipboardContentFromMonitorProcessing` / `CanIncludeInClipboardHistory = 0`）。
-//! - Windows 上用 `AddClipboardFormatListener` 等系统通知，没有轮询；
-//!   监听线程只在剪贴板真正变化时醒来。
+//! Text may be persisted locally after the user enables history. Images remain
+//! memory-only, disappear on exit, and sensitive clipboard markers are skipped.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-/// 未固定条目的上限；固定的不占这个名额。
 pub const MAX_RECENT: usize = 30;
-/// 单条最长字符数，超过的不记录（大段日志、整份文件内容）。
 pub const MAX_CHARS: usize = 20_000;
 pub const MAX_PINNED: usize = 20;
-/// 图片条目上限；固定图片不占普通名额。
 pub const MAX_IMAGES: usize = 24;
 pub const MAX_PINNED_IMAGES: usize = 12;
 pub const MAX_IMAGE_PIXELS: u64 = 40_000_000;
@@ -25,7 +17,6 @@ pub const MAX_IMAGE_BYTES: usize = 128 * 1024 * 1024;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Clip {
     pub text: String,
-    /// 本地时间 `HH:MM`。
     pub at: String,
     pub pinned: bool,
 }
@@ -33,31 +24,22 @@ pub struct Clip {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ImageClip {
     pub id: String,
-    pub file: String,
-    /// 本地时间 `HH:MM`。
     pub at: String,
     pub width: u32,
     pub height: u32,
     pub pinned: bool,
-}
-
-impl ImageClip {
-    pub fn path(&self) -> std::path::PathBuf {
-        image_dir().join(&self.file)
-    }
+    pub png: Arc<Vec<u8>>,
 }
 
 #[derive(Debug, Default)]
 pub struct History {
     pub items: Vec<Clip>,
     pub images: Vec<ImageClip>,
-    /// 每次变化 +1，界面据此判断是否需要重绘。
     pub version: u64,
     path: Option<std::path::PathBuf>,
 }
 
 impl History {
-    /// 新内容放最前；同样的文字只留一条（移到最前、保留固定状态）。
     pub fn push(&mut self, text: &str, at: &str) -> bool {
         if text.trim().is_empty() || text.chars().count() > MAX_CHARS {
             return false;
@@ -93,14 +75,11 @@ impl History {
         }
     }
 
-    /// 清空未固定的条目，固定的保留。
     pub fn clear_recent(&mut self) {
         self.items.retain(|c| c.pinned);
         self.changed();
     }
 
-    /// Pin an entry and move it to the front. Repeated clicks on an already
-    /// pinned entry still promote it without consuming another pin slot.
     pub fn pin_to_front(&mut self, index: usize) -> bool {
         let Some(mut item) = self.items.get(index).cloned() else {
             return false;
@@ -145,34 +124,25 @@ impl History {
             Some(index) => self.images.remove(index).pinned,
             None => false,
         };
-        let dir = image_dir();
-        if std::fs::create_dir_all(&dir).is_err() {
+        let mut encoded = std::io::Cursor::new(Vec::new());
+        if image
+            .write_to(&mut encoded, image::ImageFormat::Png)
+            .is_err()
+            || encoded.get_ref().len() > MAX_IMAGE_BYTES
+        {
             return false;
-        }
-        let file = format!("{id}.png");
-        let path = dir.join(&file);
-        if !path.exists() {
-            let mut encoded = std::io::Cursor::new(Vec::new());
-            if image
-                .write_to(&mut encoded, image::ImageFormat::Png)
-                .is_err()
-                || crate::model::atomic_write(&path, encoded.get_ref()).is_err()
-            {
-                return false;
-            }
         }
         self.images.insert(
             0,
             ImageClip {
                 id,
-                file,
                 at: at.to_string(),
                 width,
                 height,
                 pinned,
+                png: Arc::new(encoded.into_inner()),
             },
         );
-        let before = self.images.len();
         let mut recent = 0;
         self.images.retain(|item| {
             item.pinned || {
@@ -180,18 +150,6 @@ impl History {
                 recent <= MAX_IMAGES
             }
         });
-        if before != self.images.len() {
-            let live: std::collections::HashSet<String> =
-                self.images.iter().map(|item| item.file.clone()).collect();
-            if let Ok(entries) = std::fs::read_dir(&dir) {
-                for entry in entries.flatten() {
-                    let name = entry.file_name().to_string_lossy().to_string();
-                    if name.ends_with(".png") && !live.contains(&name) {
-                        let _ = std::fs::remove_file(entry.path());
-                    }
-                }
-            }
-        }
         self.changed();
         true
     }
@@ -200,17 +158,12 @@ impl History {
         if index >= self.images.len() {
             return;
         }
-        let item = self.images.remove(index);
-        let _ = std::fs::remove_file(item.path());
+        self.images.remove(index);
         self.changed();
     }
 
-    pub fn clear_recent_images(&mut self) {
-        let (keep, removed): (Vec<_>, Vec<_>) = self.images.drain(..).partition(|item| item.pinned);
-        self.images = keep;
-        for item in removed {
-            let _ = std::fs::remove_file(item.path());
-        }
+    pub fn clear_images(&mut self) {
+        self.images.clear();
         self.changed();
     }
 
@@ -233,41 +186,20 @@ impl History {
             .iter()
             .map(|c| serde_json::json!({"pinned": c.pinned,"text": c.text, "at": c.at}))
             .collect();
-        let images: Vec<_> = self
-            .images
-            .iter()
-            .map(|item| {
-                serde_json::json!({
-                    "id": item.id,
-                    "file": item.file,
-                    "at": item.at,
-                    "width": item.width,
-                    "height": item.height,
-                    "pinned": item.pinned,
-                })
-            })
-            .collect();
-        serde_json::to_vec(&serde_json::json!({"text": text, "images": images})).unwrap_or_default()
+        serde_json::to_vec(&serde_json::json!({"text": text})).unwrap_or_default()
     }
 
     pub fn from_json(raw: &[u8]) -> Self {
         let value: serde_json::Value =
             serde_json::from_slice(raw).unwrap_or(serde_json::Value::Null);
-        let (text_rows, image_rows) = if let Some(rows) = value.as_array() {
-            (rows.clone(), Vec::new())
+        let text_rows = if let Some(rows) = value.as_array() {
+            rows.clone()
         } else {
-            (
-                value
-                    .get("text")
-                    .and_then(|rows| rows.as_array())
-                    .cloned()
-                    .unwrap_or_default(),
-                value
-                    .get("images")
-                    .and_then(|rows| rows.as_array())
-                    .cloned()
-                    .unwrap_or_default(),
-            )
+            value
+                .get("text")
+                .and_then(|rows| rows.as_array())
+                .cloned()
+                .unwrap_or_default()
         };
         let items = text_rows
             .iter()
@@ -285,34 +217,9 @@ impl History {
             .filter(|c| !c.text.is_empty())
             .take(MAX_PINNED + MAX_RECENT)
             .collect();
-        let images = image_rows
-            .iter()
-            .filter_map(|row| {
-                let file = row.get("file")?.as_str()?.to_string();
-                if file.contains(['/', '\\']) || !file.ends_with(".png") {
-                    return None;
-                }
-                Some(ImageClip {
-                    id: row.get("id")?.as_str()?.to_string(),
-                    file,
-                    at: row
-                        .get("at")
-                        .and_then(|value| value.as_str())
-                        .unwrap_or("")
-                        .to_string(),
-                    width: u32::try_from(row.get("width")?.as_u64()?).ok()?,
-                    height: u32::try_from(row.get("height")?.as_u64()?).ok()?,
-                    pinned: row
-                        .get("pinned")
-                        .and_then(|value| value.as_bool())
-                        .unwrap_or(false),
-                })
-            })
-            .take(MAX_PINNED_IMAGES + MAX_IMAGES)
-            .collect();
         Self {
             items,
-            images,
+            images: Vec::new(),
             ..Self::default()
         }
     }
@@ -330,6 +237,8 @@ impl History {
             .map(|raw| Self::from_json(&raw))
             .unwrap_or_default();
         history.path = Some(path);
+        history.images.clear();
+        history.changed();
         history
     }
 
@@ -344,7 +253,6 @@ impl History {
     }
 }
 
-/// 界面与监听线程共用。
 #[derive(Clone)]
 pub struct Shared {
     pub history: Arc<Mutex<History>>,
@@ -354,6 +262,7 @@ pub struct Shared {
 
 impl Shared {
     pub fn new(enabled: bool, images_enabled: bool) -> Self {
+        clear_legacy_image_files();
         Self {
             history: Arc::new(Mutex::new(History::load())),
             enabled: Arc::new(AtomicBool::new(enabled)),
@@ -400,19 +309,15 @@ impl Default for Shared {
     }
 }
 
-/// 列表里的一行预览：换行与连续空白压成一个空格。
 pub fn preview(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
-
-// ---------------------------------------------------------------- Windows 监听
 
 #[cfg(windows)]
 pub fn watch(shared: Shared, repaint: impl Fn() + Send + 'static) {
     std::thread::Builder::new()
         .name("nexora-isle-clipboard".into())
         .spawn(move || {
-            // 启动失败（极少见）时剪贴板页只是没有新记录，不影响其他功能。
             let _ = win::run(shared, Box::new(repaint));
         })
         .ok();
@@ -424,8 +329,47 @@ pub fn watch(_shared: Shared, _repaint: impl Fn() + Send + 'static) {}
 #[cfg(windows)]
 const HISTORY_COPY_FORMAT: &str = "NexoraIsle.ClipboardHistoryCopy";
 
-pub(crate) fn image_dir() -> std::path::PathBuf {
+fn legacy_image_dir() -> std::path::PathBuf {
     crate::model::config_dir().join("clipboard-images")
+}
+
+fn clear_legacy_image_files_at(directory: &std::path::Path) -> std::io::Result<()> {
+    match std::fs::remove_dir_all(directory) {
+        Ok(()) => return Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(_) => {}
+    }
+
+    let entries = match std::fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    for entry in entries {
+        let path = entry?.path();
+        if path.is_dir() {
+            std::fs::remove_dir_all(path)?;
+        } else {
+            std::fs::remove_file(path)?;
+        }
+    }
+    std::fs::remove_dir(directory)
+}
+
+fn clear_legacy_image_files() {
+    let directory = legacy_image_dir();
+    let _ = clear_legacy_image_files_at(&directory);
+    std::thread::spawn(move || {
+        for delay in [100_u64, 250, 500, 1_000, 2_000, 4_000, 8_000, 15_000] {
+            if !directory.exists() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(delay));
+            if clear_legacy_image_files_at(&directory).is_ok() {
+                return;
+            }
+        }
+    });
 }
 
 #[cfg(windows)]
@@ -483,7 +427,6 @@ mod win {
         DefWindowProcW(hwnd, msg, wp, lp)
     }
 
-    /// 密码管理器、远程桌面等会给敏感内容加上这些格式，表示不要进入剪贴板历史。
     unsafe fn excluded() -> bool {
         let exclude = RegisterClipboardFormatW(w!("ExcludeClipboardContentFromMonitorProcessing"));
         let ignore = RegisterClipboardFormatW(w!("Clipboard Viewer Ignore"));
@@ -492,7 +435,6 @@ mod win {
         {
             return true;
         }
-        // 值为 DWORD 0 表示不允许进入历史。
         let history = RegisterClipboardFormatW(w!("CanIncludeInClipboardHistory"));
         if history == 0 || IsClipboardFormatAvailable(history).is_err() {
             return false;
@@ -535,7 +477,6 @@ mod win {
         if !has_text && image_formats.is_empty() {
             return None;
         }
-        // 其他程序可能正占用剪贴板，稍等重试几次。
         let mut opened = false;
         for _ in 0..5 {
             if OpenClipboard(hwnd).is_ok() {
@@ -661,6 +602,50 @@ mod win {
 mod tests {
     use super::*;
 
+    fn solid_image(rgba: [u8; 4]) -> image::DynamicImage {
+        image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(2, 2, image::Rgba(rgba)))
+    }
+
+    #[test]
+    fn image_history_is_memory_only_and_never_reloads_from_json() {
+        let mut history = History::default();
+        assert!(history.push_image(solid_image([12, 34, 56, 255]), "08:00"));
+        let raw = String::from_utf8(history.to_json()).unwrap();
+        assert!(!raw.contains("\"images\""), "图片记录不能写入持久化 JSON");
+        assert!(
+            History::from_json(raw.as_bytes()).images.is_empty(),
+            "重启后不能恢复任何图片"
+        );
+    }
+
+    #[test]
+    fn clearing_images_removes_pinned_and_recent_entries() {
+        let mut history = History::default();
+        assert!(history.push_image(solid_image([10, 20, 30, 255]), "08:00"));
+        assert!(history.push_image(solid_image([40, 50, 60, 255]), "08:01"));
+        history.images[1].pinned = true;
+        history.clear_images();
+        assert!(history.images.is_empty());
+    }
+
+    #[test]
+    fn legacy_image_cleanup_removes_the_directory_and_is_idempotent() {
+        let directory = std::env::temp_dir().join(format!(
+            "nexora-isle-legacy-images-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(directory.join("stale.png"), b"not a real image").unwrap();
+
+        clear_legacy_image_files_at(&directory).unwrap();
+        assert!(!directory.exists(), "旧图片目录应被完整删除");
+        clear_legacy_image_files_at(&directory).unwrap();
+    }
+
     #[test]
     fn history_copy_preserves_order_but_external_copy_promotes() {
         let shared = Shared {
@@ -726,22 +711,22 @@ mod tests {
     }
 
     #[test]
-    fn pinned_round_trip_and_preview() {
+    fn text_round_trip_and_preview_ignores_memory_images() {
         let mut h = History::default();
         h.push("第一行\n第二行  末尾", "08:00");
         h.push("临时", "08:01");
         h.items[1].pinned = true;
         h.images.push(ImageClip {
             id: "abc".into(),
-            file: "abc.png".into(),
             at: "08:02".into(),
             width: 640,
             height: 360,
             pinned: true,
+            png: Arc::new(Vec::new()),
         });
         let back = History::from_json(&h.to_json());
         assert_eq!(back.items, h.items);
-        assert_eq!(back.images, h.images);
+        assert!(back.images.is_empty(), "图片不能从持久化历史恢复");
         assert_eq!(preview(&back.items[1].text), "第一行 第二行 末尾");
         assert!(History::from_json(b"not json").items.is_empty());
     }

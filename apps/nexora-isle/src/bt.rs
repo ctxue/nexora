@@ -1,5 +1,3 @@
-//! 经典蓝牙与低功耗蓝牙设备的连接状态和电量。
-
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -95,7 +93,6 @@ fn device_kind(name: &str, classic: bool, class: Option<u32>) -> DeviceKind {
 }
 
 impl Device {
-    /// 通知条正文：`名称 · 电量 80%`，设备没上报电量时只写名称。
     pub fn summary(&self) -> String {
         match self.battery {
             Some(b) => format!("{} · 电量 {b}%", self.name),
@@ -134,7 +131,6 @@ impl Cache {
                 .battery_at
                 .is_none_or(|at| now.duration_since(at) >= Duration::from_secs(60))
         {
-            // 失败同样限频，避免设备驱动异常时每两秒重新枚举整机。
             self.battery_at = Some(now);
             if let Ok(levels) = read(&devices) {
                 for device in &mut devices {
@@ -150,7 +146,6 @@ impl Cache {
     }
 }
 
-/// 释放服务时唤醒后台线程，停止后续扫描。
 pub struct Service {
     pub rx: std::sync::mpsc::Receiver<Vec<Device>>,
     stop: std::sync::mpsc::Sender<()>,
@@ -292,7 +287,6 @@ fn read_batteries(devices: &[Device]) -> Result<Vec<(String, u8)>, ()> {
     use windows::Win32::Devices::Properties::DEVPROPKEY;
     use windows::Win32::Foundation::HWND;
 
-    // DEVPKEY_Bluetooth_Battery {104EA319-6EE2-4701-BD47-8DDBF425BBE5}, 2
     const BATTERY: DEVPROPKEY = DEVPROPKEY {
         fmtid: GUID::from_u128(0x104ea319_6ee2_4701_bd47_8ddbf425bbe5),
         pid: 2,
@@ -325,7 +319,6 @@ fn read_batteries(devices: &[Device]) -> Result<Vec<(String, u8)>, ()> {
                 batteries.push((upper.clone(), level));
             }
         }
-        // 每次枚举后释放设备列表句柄。
         let _ = SetupDiDestroyDeviceInfoList(set);
     }
     Ok(devices
@@ -361,7 +354,6 @@ unsafe fn byte_prop(
 ) -> Option<u8> {
     use windows::Win32::Devices::DeviceAndDriverInstallation::SetupDiGetDevicePropertyW;
     use windows::Win32::Devices::Properties::DEVPROPTYPE;
-    // DEVPROP_TYPE_BYTE
     const BYTE: DEVPROPTYPE = DEVPROPTYPE(0x3);
     let mut ty = DEVPROPTYPE::default();
     let mut buf = [0u8; 1];

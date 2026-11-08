@@ -1,3 +1,5 @@
+// NEXORA launcher screen: query input, search results, actions, and transient UI.
+
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import {
   useCallback,
@@ -334,7 +336,6 @@ function Launcher({ settings }: { settings: Settings }) {
 
   useEffect(() => {
     void platform.setTrayLanguage(settings.language).catch(() => {
-      // The tray is optional; keep the launcher usable if it is unavailable.
     });
   }, [settings.language]);
 
@@ -343,15 +344,10 @@ function Launcher({ settings }: { settings: Settings }) {
       showToast(t("toast.shortcutFailed"));
       void platform.openSettingsWindow();
     });
-    // The saved shortcut is applied once on startup; later changes are made
-    // from the separate settings window and synced through localStorage.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    // Focus immediately, then once more after the native window has finished
-    // activating. This prevents the Windows beep when the first characters
-    // arrive before the webview has an active editable element.
     focusSearchInput();
     const frame = window.requestAnimationFrame(focusSearchInput);
     const timer = window.setTimeout(focusSearchInput, 60);

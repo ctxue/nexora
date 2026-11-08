@@ -58,9 +58,6 @@ fn trim_icon_padding(source: &image::RgbaImage) -> image::RgbaImage {
     let crop_width = max_x - min_x + 1;
     let crop_height = max_y - min_y + 1;
 
-    // Keep the original image when the shell already returned a tightly
-    // cropped icon. Otherwise a white 256px canvas would leave the real icon
-    // tiny in the middle of the row.
     if crop_width < 4 || crop_height < 4 || (crop_width * crop_height) > (width * height * 95 / 100)
     {
         return source.clone();

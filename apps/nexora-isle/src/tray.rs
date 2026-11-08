@@ -1,14 +1,3 @@
-//! 系统托盘、右键菜单与开机启动。
-//!
-//! 托盘行为：
-//! - `uID=1`，`uFlags=NIF_MESSAGE|NIF_ICON|NIF_TIP`，回调 `WM_APP+9`；
-//! - 图标取 exe 内 `RT_GROUP_ICON #1`，按 `SM_CXSMICON` 走 `LoadImageW`；
-//! - 左键、右键都弹同一个菜单，没有双击分支；
-//! - 菜单跟随界面语言，含设置入口，前三项每次打开现算勾选态；
-//! - 弹菜单前 `SetForegroundWindow`，期间 `SetTimer(12, 16ms)`，收尾 `KillTimer` +
-//!   `PostMessage(WM_NULL)` + `DestroyMenu`；
-//! - `Exit` 先摘图标再 `ExitProcess`；`TaskbarCreated` 广播时重建图标。
-
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
@@ -34,11 +23,8 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 
 use crate::i18n::Language;
 
-/// Tray callback message.
 pub const WM_TRAY: u32 = WM_APP + 9;
-/// 仅构建并导出当前菜单状态，不弹出菜单（自动化取证用）。
 pub const WM_TRAY_DUMP: u32 = WM_APP + 2;
-/// 在屏幕坐标 (wparam, lparam) 弹出菜单（隐藏桌面取证用）。
 pub const WM_TRAY_MENU: u32 = WM_APP + 3;
 
 const TRAY_UID: u32 = 1;
@@ -49,9 +35,8 @@ const CMD_MINIMAL: u32 = 4;
 const CMD_START: u32 = 5;
 const CMD_SETTINGS: u32 = 6;
 const CMD_DATA: u32 = 7;
-const CMD_IMAGES: u32 = 8;
-const CMD_UPDATE: u32 = 9;
-const CMD_ABOUT: u32 = 10;
+const CMD_UPDATE: u32 = 8;
+const CMD_ABOUT: u32 = 9;
 const TIMER_MENU: usize = 12;
 
 const RUN_KEY: PCWSTR = w!("Software\\Microsoft\\Windows\\CurrentVersion\\Run");
@@ -66,7 +51,7 @@ pub struct State {
     pub language: Language,
 }
 
-fn labels(language: Language) -> [&'static str; 10] {
+fn labels(language: Language) -> [&'static str; 9] {
     if language.is_en() {
         [
             "Show NEXORA ISLE",
@@ -75,23 +60,21 @@ fn labels(language: Language) -> [&'static str; 10] {
             "Launch at sign-in",
             "Open settings",
             "Open data folder",
-            "Open image folder",
             "Check for updates",
             "About NEXORA ISLE",
             "Quit NEXORA ISLE",
         ]
     } else {
         [
-            "立即显示星屿",
-            "完整星屿",
+            "立即显示岛屿",
+            "完整岛屿",
             "极简模式",
             "登录时启动",
             "打开设置",
             "打开数据目录",
-            "打开图片文件夹",
             "检查更新",
-            "关于星屿",
-            "退出星屿",
+            "关于岛屿",
+            "退出岛屿",
         ]
     }
 }
@@ -119,7 +102,6 @@ pub enum Event {
     ToggleMinimal,
     ToggleAutostart,
     OpenDataFolder,
-    OpenImagesFolder,
     CheckUpdates,
 }
 
@@ -134,14 +116,13 @@ fn fill_tip(dst: &mut [u16], s: &str) {
     dst[n] = 0;
 }
 
-/// exe 里编入的 `RT_GROUP_ICON #1`，按系统小图标尺寸取最合适的一帧。
 fn load_resource_icon() -> Option<HICON> {
     unsafe {
         let module = GetModuleHandleW(None).ok()?;
         let cx = GetSystemMetrics(SM_CXSMICON);
         let handle = LoadImageW(
             module,
-            PCWSTR(1 as *const u16),
+            PCWSTR(std::ptr::dangling::<u16>()),
             IMAGE_ICON,
             cx,
             cx,
@@ -152,7 +133,6 @@ fn load_resource_icon() -> Option<HICON> {
     }
 }
 
-/// 图标取不到时，直接解析内嵌的 NEXORA ISLE ICO。
 fn load_embedded_icon() -> Option<HICON> {
     let ico: &[u8] = include_bytes!("../assets/nexora-isle.ico");
     if ico.len() < 6 {
@@ -199,7 +179,6 @@ fn add_icon(hwnd: HWND, hicon: HICON) -> bool {
     fill_tip(&mut nid.szTip, crate::product::identity::TRAY_TOOLTIP);
     unsafe {
         if !Shell_NotifyIconW(NIM_ADD, &nid).as_bool() {
-            // explorer 里已有同名残留时，用 MODIFY 顶掉
             return Shell_NotifyIconW(NIM_MODIFY, &nid).as_bool();
         }
         true
@@ -241,11 +220,10 @@ fn popup_menu(state: State) -> windows::core::Result<HMENU> {
         append(MF_SEPARATOR, 0, PCWSTR::null());
         append(MF_STRING, CMD_SETTINGS, PCWSTR(wide[4].as_ptr()));
         append(MF_STRING, CMD_DATA, PCWSTR(wide[5].as_ptr()));
-        append(MF_STRING, CMD_IMAGES, PCWSTR(wide[6].as_ptr()));
-        append(MF_STRING, CMD_UPDATE, PCWSTR(wide[7].as_ptr()));
+        append(MF_STRING, CMD_UPDATE, PCWSTR(wide[6].as_ptr()));
         append(MF_SEPARATOR, 0, PCWSTR::null());
-        append(MF_STRING, CMD_ABOUT, PCWSTR(wide[8].as_ptr()));
-        append(MF_STRING, CMD_EXIT, PCWSTR(wide[9].as_ptr()));
+        append(MF_STRING, CMD_ABOUT, PCWSTR(wide[7].as_ptr()));
+        append(MF_STRING, CMD_EXIT, PCWSTR(wide[8].as_ptr()));
         Ok(menu)
     }
 }
@@ -273,16 +251,16 @@ fn menu_items(menu: HMENU) -> Vec<(String, bool, bool)> {
 fn about(owner: HWND, language: Language) {
     let text = wide(&if language.is_en() {
         format!(
-            "NEXORA ISLE · 星屿 {}\n\nA desktop companion at the edge of Windows.\nRight-click the tray icon and choose Quit NEXORA ISLE to exit.",
+            "NEXORA ISLE · 岛屿 {}\n\nA desktop companion at the edge of Windows.\nRight-click the tray icon and choose Quit NEXORA ISLE to exit.",
             env!("CARGO_PKG_VERSION")
         )
     } else {
         format!(
-            "NEXORA ISLE · 星屿 {}\n\nWindows 桌面信息岛\n退出请右键托盘图标，选择「退出星屿」。",
+            "NEXORA ISLE · 岛屿 {}\n\nWindows 桌面信息岛\n退出请右键托盘图标，选择「退出岛屿」。",
             env!("CARGO_PKG_VERSION")
         )
     });
-    let title = wide(language.text("关于星屿", "About NEXORA ISLE"));
+    let title = wide(language.text("关于岛屿", "About NEXORA ISLE"));
     unsafe {
         let mut centering = crate::system::NativeDialogCenter::start(Some(owner));
         MessageBoxW(
@@ -329,7 +307,6 @@ fn show_menu_at(hwnd: HWND, ctx: &Ctx, x: i32, y: i32) {
     };
     dump_menu(hwnd, ctx, menu);
     unsafe {
-        // 不先给前台，菜单会因为焦点切换立刻消失
         let _ = SetForegroundWindow(hwnd);
         let _ = SetTimer(hwnd, TIMER_MENU, 16, None);
         let cmd = TrackPopupMenu(
@@ -343,7 +320,6 @@ fn show_menu_at(hwnd: HWND, ctx: &Ctx, x: i32, y: i32) {
         )
         .0 as u32;
         let _ = KillTimer(hwnd, TIMER_MENU);
-        // 收尾：让菜单彻底消失
         let _ = PostMessageW(hwnd, WM_NULL, WPARAM(0), LPARAM(0));
         let _ = DestroyMenu(menu);
         match cmd {
@@ -365,15 +341,11 @@ fn show_menu_at(hwnd: HWND, ctx: &Ctx, x: i32, y: i32) {
             CMD_DATA => {
                 let _ = ctx.tx.send(Event::OpenDataFolder);
             }
-            CMD_IMAGES => {
-                let _ = ctx.tx.send(Event::OpenImagesFolder);
-            }
             CMD_UPDATE => {
                 let _ = ctx.tx.send(Event::CheckUpdates);
             }
             CMD_ABOUT => about(hwnd, ctx.state().language),
             CMD_EXIT => {
-                // Remove the icon before terminating the process.
                 remove_icon(hwnd);
                 ExitProcess(0);
             }
@@ -398,7 +370,6 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
     let ctx = &*ctx_ptr;
     if msg == WM_TRAY {
         let mouse = (lp.0 as u32) & 0xffff;
-        // Left and right clicks open the same menu.
         if matches!(mouse, WM_LBUTTONUP | WM_RBUTTONUP) {
             show_menu(hwnd, ctx);
         }
@@ -546,7 +517,7 @@ impl Tray {
         })
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn hwnd(&self) -> HWND {
         self.hwnd
     }
@@ -562,7 +533,6 @@ impl Tray {
         };
         fill_tip(&mut nid.szInfoTitle, title);
         fill_tip(&mut nid.szInfo, body);
-        // NIIF_NOSOUND，默认安静提醒。
         if !sound {
             nid.dwInfoFlags.0 |= 0x10;
         }
@@ -594,7 +564,6 @@ impl Drop for Tray {
     }
 }
 
-/// 单实例：已有 NEXORA ISLE 实例时返回 false。
 pub fn single_instance() -> bool {
     unsafe {
         match CreateMutexW(None, false, MUTEX_NAME) {
@@ -603,7 +572,6 @@ pub fn single_instance() -> bool {
                     let _ = CloseHandle(handle);
                     false
                 } else {
-                    // HANDLE 没有 Drop，故意不 CloseHandle：进程存活期间一直持有互斥体
                     let _ = handle;
                     true
                 }
@@ -668,6 +636,57 @@ pub fn set_autostart(on: bool) -> Result<(), String> {
     Ok(())
 }
 
+fn request_existing_window(hwnd: HWND) -> bool {
+    unsafe {
+        if hwnd.0.is_null() {
+            return false;
+        }
+        let mut reply = 0usize;
+        SendMessageTimeoutW(
+            hwnd,
+            WM_APP + 4,
+            WPARAM(0),
+            LPARAM(0),
+            SMTO_ABORTIFHUNG | SMTO_ERRORONEXIT,
+            1500,
+            Some(&mut reply),
+        )
+        .0 != 0
+            && reply == 1
+    }
+}
+
+pub fn activate_existing() -> bool {
+    unsafe {
+        let Ok(tray) = FindWindowW(w!("NexoraIsleTray"), PCWSTR::null()) else {
+            return false;
+        };
+        let Ok(window) = FindWindowW(PCWSTR::null(), w!("NEXORA ISLE")) else {
+            return false;
+        };
+        let (mut tray_pid, mut window_pid) = (0, 0);
+        GetWindowThreadProcessId(tray, Some(&mut tray_pid));
+        GetWindowThreadProcessId(window, Some(&mut window_pid));
+        if tray_pid == 0 || tray_pid != window_pid {
+            return false;
+        }
+        if SendMessageTimeoutW(
+            window,
+            WM_NULL,
+            WPARAM(0),
+            LPARAM(0),
+            SMTO_ABORTIFHUNG | SMTO_ERRORONEXIT,
+            1500,
+            None,
+        )
+        .0 == 0
+        {
+            return false;
+        }
+        request_existing_window(tray)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -716,8 +735,8 @@ mod tests {
         ] {
             let menu = popup_menu(state).expect("创建菜单");
             let items = menu_items(menu);
-            assert_eq!(items.len(), 13, "10 项 + 3 分隔线");
-            assert!(items[1].2 && items[5].2 && items[10].2);
+            assert_eq!(items.len(), 12, "9 项 + 3 分隔线");
+            assert!(items[1].2 && items[5].2 && items[9].2);
             let texts: Vec<_> = items
                 .iter()
                 .filter(|i| !i.2)
@@ -726,16 +745,15 @@ mod tests {
             assert_eq!(
                 texts,
                 [
-                    "立即显示星屿",
-                    "完整星屿",
+                    "立即显示岛屿",
+                    "完整岛屿",
                     "极简模式",
                     "登录时启动",
                     "打开设置",
                     "打开数据目录",
-                    "打开图片文件夹",
                     "检查更新",
-                    "关于星屿",
-                    "退出星屿"
+                    "关于岛屿",
+                    "退出岛屿"
                 ]
             );
             assert_eq!(
@@ -754,16 +772,15 @@ mod tests {
         assert_eq!(
             labels(Language::Zh),
             [
-                "立即显示星屿",
-                "完整星屿",
+                "立即显示岛屿",
+                "完整岛屿",
                 "极简模式",
                 "登录时启动",
                 "打开设置",
                 "打开数据目录",
-                "打开图片文件夹",
                 "检查更新",
-                "关于星屿",
-                "退出星屿"
+                "关于岛屿",
+                "退出岛屿"
             ]
         );
         assert_eq!(
@@ -775,18 +792,11 @@ mod tests {
                 "Launch at sign-in",
                 "Open settings",
                 "Open data folder",
-                "Open image folder",
                 "Check for updates",
                 "About NEXORA ISLE",
                 "Quit NEXORA ISLE"
             ]
         );
-    }
-
-    #[test]
-    fn icon_resource_is_embedded() {
-        // 托盘图标必须来自 exe 资源 #1（rc.exe 编入），不是临时画的
-        assert!(load_resource_icon().is_some(), "RT_GROUP_ICON #1 取不到");
     }
 
     #[test]
@@ -805,65 +815,11 @@ mod tests {
             CMD_START,
             CMD_SETTINGS,
             CMD_DATA,
-            CMD_IMAGES,
             CMD_UPDATE,
             CMD_ABOUT,
             CMD_EXIT,
         ];
         let unique: std::collections::HashSet<_> = ids.into_iter().collect();
         assert_eq!(unique.len(), ids.len());
-    }
-}
-
-/// 重复启动时请求现有实例打开窗口，限制等待时间以免跟随挂起。
-fn request_existing_window(hwnd: HWND) -> bool {
-    unsafe {
-        if hwnd.0.is_null() {
-            return false;
-        }
-        let mut reply = 0usize;
-        SendMessageTimeoutW(
-            hwnd,
-            WM_APP + 4,
-            WPARAM(0),
-            LPARAM(0),
-            SMTO_ABORTIFHUNG | SMTO_ERRORONEXIT,
-            1500,
-            Some(&mut reply),
-        )
-        .0 != 0
-            && reply == 1
-    }
-}
-
-pub fn activate_existing() -> bool {
-    unsafe {
-        let Ok(tray) = FindWindowW(w!("NexoraIsleTray"), PCWSTR::null()) else {
-            return false;
-        };
-        let Ok(window) = FindWindowW(PCWSTR::null(), w!("NEXORA ISLE")) else {
-            return false;
-        };
-        let (mut tray_pid, mut window_pid) = (0, 0);
-        GetWindowThreadProcessId(tray, Some(&mut tray_pid));
-        GetWindowThreadProcessId(window, Some(&mut window_pid));
-        if tray_pid == 0 || tray_pid != window_pid {
-            return false;
-        }
-        // 托盘有独立线程，能接收消息不代表界面线程仍可响应。
-        if SendMessageTimeoutW(
-            window,
-            WM_NULL,
-            WPARAM(0),
-            LPARAM(0),
-            SMTO_ABORTIFHUNG | SMTO_ERRORONEXIT,
-            1500,
-            None,
-        )
-        .0 == 0
-        {
-            return false;
-        }
-        request_existing_window(tray)
     }
 }

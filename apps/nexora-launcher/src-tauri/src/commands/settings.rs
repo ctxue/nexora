@@ -1,6 +1,3 @@
-//! Commands for the settings window: opening it, theming it, and moving the
-//! configuration in and out as JSON.
-
 use tauri::{AppHandle, Manager};
 
 use crate::{
@@ -31,7 +28,6 @@ pub fn set_app_theme(app: AppHandle, theme: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Opens the native save dialog and writes the exported configuration there.
 #[tauri::command]
 pub fn export_settings(json: String) -> Result<Option<String>, String> {
     let Some(path) = dialogs::ask_save_path() else {
@@ -42,7 +38,6 @@ pub fn export_settings(json: String) -> Result<Option<String>, String> {
     Ok(Some(path.to_string_lossy().to_string()))
 }
 
-/// Opens the native open dialog and returns the selected configuration file.
 #[tauri::command]
 pub fn import_settings() -> Result<Option<String>, String> {
     let Some(path) = dialogs::ask_open_path() else {

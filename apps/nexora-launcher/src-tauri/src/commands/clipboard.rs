@@ -1,5 +1,3 @@
-//! Commands for reading and editing the local clipboard history.
-
 use tauri::{AppHandle, Emitter, State};
 
 use crate::{

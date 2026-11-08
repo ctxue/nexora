@@ -17,7 +17,6 @@ path = "src/main.rs"
 
 [patch.crates-io]
 imap-proto = { path = "vendor/imap-proto" }
-eframe = { path = "vendor/eframe" }
 
 [dependencies]
 eframe = { version = "0.31", default-features = false, features = ["glow", "wgpu", "default_fonts"] }

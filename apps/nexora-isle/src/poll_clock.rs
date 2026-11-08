@@ -1,5 +1,3 @@
-//! 未采样的时钟可立即刷新，无需向前回拨 Instant。
-//! 避免 Windows 刚开机时单调时钟回拨下溢（#11）。
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, Debug, Default)]

@@ -1,10 +1,5 @@
-/** Keys that only act as modifiers and must not end a recording. */
 const MODIFIER_KEYS = new Set(["Control", "Alt", "Shift", "Meta"]);
 
-/**
- * Turns a keyboard event into a Tauri accelerator such as `Ctrl+Alt+Space`.
- * Returns `null` while only modifiers are held (nothing to record yet).
- */
 export function acceleratorFromEvent(event: KeyboardEvent): string | null {
   if (MODIFIER_KEYS.has(event.key) || event.key === "Escape") return null;
 

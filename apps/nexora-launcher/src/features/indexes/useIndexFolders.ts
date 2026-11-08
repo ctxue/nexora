@@ -7,7 +7,6 @@ import {
   type IndexState,
 } from "./storage";
 
-/** Index folders configurable from the settings window. */
 export function useIndexFolders() {
   const [state, setState] = useState<IndexState>(loadIndexState);
 

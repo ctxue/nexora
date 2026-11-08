@@ -22,7 +22,6 @@ const EMPTY_QUERY: SearchQuery = {
   folder: null,
 };
 
-/** Parses launcher filters without treating them as part of the fuzzy query. */
 export function parseSearchQuery(raw: string): SearchQuery {
   const query = { ...EMPTY_QUERY };
   const words: string[] = [];

@@ -1,4 +1,8 @@
-//! 歌词：按播放器与歌曲信息匹配 QQ 音乐、网易云及 LRCLIB，同步歌词成功后缓存。
+//! Lyrics lookup, identity matching, timing, and bounded local caching.
+//!
+//! Candidates are rejected when title, artist, duration, or source identity
+//! cannot be reconciled. A fallback never replaces a verified synchronized
+//! lyric for the same recording.
 
 const MAX_TEXT: usize = 1024 * 1024;
 const MAX_LINES: usize = 5000;
@@ -8,12 +12,10 @@ fn rejected_lyrics() -> Lyrics {
     Lyrics::default()
 }
 
-/// 确认「所有来源都没有同步歌词」后记住 7 天，期间不再联网；网络失败不会写入。
 const NEGATIVE_TTL: std::time::Duration = std::time::Duration::from_secs(7 * 24 * 3600);
 const TRACE_LIMIT: usize = 24;
 
 thread_local! {static TRACE:std::cell::RefCell<Vec<String>>=const{std::cell::RefCell::new(Vec::new())};}
-/// 记录本次查词经过的步骤，只写本机诊断日志，便于定位「为什么没词」。
 fn trace(step: impl FnOnce() -> String) {
     TRACE.with(|trace| {
         let mut trace = trace.borrow_mut();
@@ -39,12 +41,9 @@ fn outcome(result: &Result<Lyrics, FetchError>) -> String {
 }
 
 fn is_native_script(c: char) -> bool {
-    // 韩文音节与字母、日文假名：这类歌名对应的歌词正文应以同一种文字为主。
     matches!(c,'\u{AC00}'..='\u{D7A3}'|'\u{1100}'..='\u{11FF}'|'\u{3130}'..='\u{318F}'|'\u{3040}'..='\u{30FF}')
 }
 
-/// 歌名是韩文或日文假名，歌词正文却几乎全是拉丁字母：判定为罗马音（音译）版本。
-/// 只看歌名不看歌手：韩国歌手唱英文歌（歌名是英文）时歌词本来就是英文，不能误判。
 pub(crate) fn romanized(track: &str, lyrics: &Lyrics) -> bool {
     if !track.chars().any(is_native_script) {
         return false;
@@ -147,14 +146,12 @@ impl FetchError {
 }
 
 impl Lyrics {
-    /// 返回当前时间点应显示的行号。
     pub fn index_at(&self, secs: f32) -> Option<usize> {
         self.lines.iter().rposition(|line| line.t <= secs)
     }
 }
 
 fn parse_time(tag: &str) -> Option<f32> {
-    // mm:ss.xx 或 mm:ss:xx
     let mut parts = tag.split(':');
     let m: u32 = parts.next()?.trim().parse().ok()?;
     let rest = parts.next()?.trim();
@@ -225,7 +222,6 @@ fn quality_lyrics_keep_brackets_in_the_actual_text() {
     assert_eq!(parsed.lines.len(), 3);
 }
 
-/// 纯文本没有同步时间，保留正文但不伪造逐行时间戳。
 pub fn from_plain(raw: &str) -> Lyrics {
     if raw.len() > MAX_TEXT
         || raw.lines().count() > MAX_LINES
@@ -256,7 +252,6 @@ pub fn is_soda(source: &str) -> bool {
     source == "汽水音乐" || source.to_ascii_lowercase().contains("sodamusic")
 }
 
-/// 本地歌词缓存的「版本」：文件修改时间与大小都没变时不必再完整读取。目前只有汽水音乐的单文件缓存可靠适用。
 pub(crate) fn native_fingerprint(source: &str) -> Option<(std::time::SystemTime, u64)> {
     if is_soda(source) {
         return soda_cache::fingerprint();
@@ -280,7 +275,6 @@ pub(crate) fn read_native(
     None
 }
 
-/// 返回歌词及是否仍需等待酷狗缓存；等待期间复用已有歌词，不重复访问在线服务。
 pub fn fetch_for_display(
     source: &str,
     track: &str,
@@ -321,7 +315,6 @@ pub fn fetch_for_display(
         take_trace().join(" → "),
         started.elapsed().as_millis()
     );
-    // 测试时不写，免得把模拟数据混进用户的真实诊断日志。
     if !cfg!(test) {
         crate::resources::append_log(
             &crate::model::config_dir().join("diagnostics"),
@@ -332,7 +325,6 @@ pub fn fetch_for_display(
     result
 }
 
-/// 原生缓存优先；未缓存的新歌仍可使用已有在线来源。
 pub fn fetch_for_source(
     source: &str,
     track: &str,
@@ -401,7 +393,6 @@ pub fn fetch_for_source(
                     write_cache(&path, &lyrics);
                     return Ok(lyrics);
                 }
-                // 网易云本身只有文本歌词（「暂无自动滚动」）：不再重复搜网易云，改到 QQ 音乐、LRCLIB 找同步版本。
                 Ok(plain) => {
                     let (other, failed) =
                         fetch_online_detail(track, artist, duration, Skip::Netease);
@@ -418,7 +409,6 @@ pub fn fetch_for_source(
                     }
                     return Ok(plain);
                 }
-                // 按 ID 取词失败（限流、断网）时仍走搜索，避免一次失败就整首无词。
                 Err(_) => {}
             }
         }
@@ -440,7 +430,6 @@ fn parse_krc(raw: &str) -> Lyrics {
     }
     static LINE_TAG: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     static WORD_TAG: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    // 本地歌词会被轮询读取，正则只编译一次。
     let line_tag = LINE_TAG.get_or_init(|| regex::Regex::new(r"^\[(\d+),(\d+)\]").unwrap());
     let word_tag = WORD_TAG.get_or_init(|| regex::Regex::new(r"<\d+,\d+,\d+>").unwrap());
     let mut timed = Vec::new();
@@ -473,7 +462,6 @@ fn parse_krc(raw: &str) -> Lyrics {
             t: *start as f32 / 1000.0,
             text: text.clone(),
         });
-        // 短暂换气保留上一句，只在至少 3 秒的间奏或尾奏清空歌词。
         if end > start
             && timed
                 .get(i + 1)
@@ -502,7 +490,6 @@ enum Skip {
     QqMusic,
 }
 
-/// 通用在线查询：网易云 → QQ 音乐 → LRCLIB，任一来源有同步歌词即返回；已查过的来源可跳过。
 fn fetch_online(
     track: &str,
     artist: &str,
@@ -512,7 +499,6 @@ fn fetch_online(
     fetch_online_detail(track, artist, duration_secs, skip).0
 }
 
-/// 第二个返回值：是否有来源失败（结果可能不完整，调用方不应据此缓存「没有歌词」）。
 fn fetch_online_detail(
     track: &str,
     artist: &str,
@@ -523,7 +509,6 @@ fn fetch_online_detail(
         return (Err(FetchError::IncompleteMetadata), true);
     }
     let path = cache_path(track, artist, duration_secs);
-    // 旧版本可能缓存过罗马音版本：忽略它重新查找原文。
     if let Some(lyrics) = read_cache(&path).filter(|lyrics| !romanized(track, lyrics)) {
         trace(|| "本地缓存:命中".into());
         return (Ok(lyrics), false);
@@ -543,13 +528,11 @@ fn fetch_online_detail(
         duration_secs,
     );
     match &result {
-        // 罗马音版本照常显示，但不缓存，下次仍尝试找原文。
         Ok(lyrics) if lyrics.synced => {
             if !romanized(track, lyrics) {
                 write_cache(&path, lyrics);
             }
         }
-        // 每个来源都正常回应却没有同步歌词，才记为「确认没有」；有来源断网或限流时下次照常重查。
         Ok(lyrics) if !failed => write_negative(&path, Some(lyrics)),
         Err(FetchError::NotFound) if !failed => write_negative(&path, None),
         _ => {}
@@ -615,8 +598,7 @@ fn fetch_with_sources(
     fetch_with_sources_detail(netease, qq, lrclib, track, artist, duration).0
 }
 
-/// 按顺序尝试，命中同步歌词立即停止；全部只有纯文本时取第一个，网络类错误优先于「未找到」上报以便重试。
-/// 第二个返回值表示是否有来源失败（断网、限流、响应异常），这时结果不能当作「确认没有」缓存。
+#[allow(clippy::type_complexity)]
 fn fetch_with_sources_detail(
     netease: Option<&str>,
     qq: Option<&str>,
@@ -653,7 +635,6 @@ fn fetch_with_sources_detail(
             )
         });
         match result {
-            // 罗马音版本先留作备选，继续向后面的来源找原文。
             Ok(lyrics) if roman => {
                 if transliterated.is_none() {
                     transliterated = Some(lyrics);
@@ -674,7 +655,6 @@ fn fetch_with_sources_detail(
         }
     }
     let failed = failure.is_some();
-    // 没有原文同步歌词时，罗马音同步歌词仍比纯文本更有用（岛上能逐句显示）。
     if let Some(lyrics) = transliterated {
         return (Ok(lyrics), failed);
     }
@@ -688,7 +668,6 @@ fn fetch_with_sources_detail(
     )
 }
 
-/// 播放器两路来源（SMTC 与网易云日志）的歌名、歌手写法可能不同：统一规范化后再比较是否同一首。
 pub(crate) fn same_song(title: &str, artist: &str, other_title: &str, other_artist: &str) -> bool {
     let (a, b) = (
         song_identity(title, artist),
@@ -730,7 +709,6 @@ fn split_feature(text: &str) -> (&str, &str) {
     }
 }
 
-/// 合唱署名可能位于歌名或歌手字段；只移动明确的署名，保留 Live、Remix 等版本信息。
 fn song_identity(title: &str, artist: &str) -> (String, Vec<String>) {
     let cleaned = clean_title(title);
     let (title, guests) = split_feature(&cleaned);
@@ -811,7 +789,6 @@ fn fetch_netease(
 ) -> Result<Lyrics, FetchError> {
     let (query_title, query_artist) = search_terms(track, artist);
     let mut candidates = Vec::new();
-    // 「歌名 歌手」搜不到时再只按歌名搜一次：多歌手、译名歌手常让组合关键词落空，匹配仍校验歌手和时长。
     for (i, query) in [format!("{query_title} {query_artist}"), query_title.clone()]
         .into_iter()
         .enumerate()
@@ -880,7 +857,6 @@ fn is_credit(text: &str) -> bool {
     CREDIT.get_or_init(||regex::Regex::new(r"^\s*(?:作词|作曲|编曲|词|曲|演唱|原唱|制作人|监制|混音|母带|和声|吉他|贝斯|鼓|弦乐|录音|出品|发行|OP|SP|Lyrics?|Lyricist|Composer|Arranger|Producer)\s*[:：]").unwrap()).is_match(text)
 }
 
-/// 网易云「暂无自动滚动」的歌常只有作词、作曲几行带时间，正文没有时间戳；这种不能当同步歌词，否则岛上会一直停在署名行。
 fn lyrics_from_text(raw: &str) -> Lyrics {
     let lyrics = parse_lrc(raw);
     let body_timed = lyrics
@@ -890,7 +866,6 @@ fn lyrics_from_text(raw: &str) -> Lyrics {
     if lyrics.synced && body_timed {
         return lyrics;
     }
-    // 去掉行首时间标签与网易云的 JSON 署名行，保留可读正文。
     let text = raw
         .lines()
         .filter(|line| !line.trim_start().starts_with("{\"t\""))
@@ -915,7 +890,6 @@ fn qq_candidates(
     artist: &str,
     duration: f64,
 ) -> Vec<String> {
-    // 统一字段后复用严格匹配，保留歌手、版本与时长约束。
     let candidates: Vec<_> = items
         .iter()
         .enumerate()
@@ -1005,7 +979,6 @@ fn request_json_with_retry(
         .set("Accept", "application/json")
         .timeout(std::time::Duration::from_secs(5));
     let mut result = request.clone().call();
-    // QQ 的偶发连接超时、网关错误只重试一次；拒绝访问和无歌词不重复请求。
     if retry
         && result.as_ref().is_err_and(|error| {
             matches!(
@@ -1088,7 +1061,6 @@ fn lyrics_from_items(
     track: &str,
     duration_secs: f64,
 ) -> Result<Lyrics, FetchError> {
-    // LRCLIB 同一首韩文、日文歌常同时有原文和罗马音版本：原文优先，其次时长更接近。
     let mut synced: Option<(Lyrics, (bool, f64))> = None;
     let mut plain: Option<(Lyrics, f64)> = None;
     for it in items {
@@ -1107,7 +1079,7 @@ fn lyrics_from_items(
             if !parsed.lines.is_empty()
                 && synced
                     .as_ref()
-                    .is_none_or(|(_, s)| rank.0 < s.0 || rank.0 == s.0 && rank.1 < s.1)
+                    .is_none_or(|(_, s)| !rank.0 & s.0 || rank.0 == s.0 && rank.1 < s.1)
             {
                 synced = Some((parsed, rank));
             }
@@ -1416,10 +1388,9 @@ mod tests {
         let worker = std::thread::spawn(move || {
             let (mut stalled, _) = listener.accept().unwrap();
             let mut buffer = [0; 4096];
-            stalled.read(&mut buffer).unwrap();
-            // 保持第一条连接不响应，第二次请求才返回，真实覆盖五秒读取超时。
+            let _ = stalled.read(&mut buffer).unwrap();
             let (mut recovered, _) = listener.accept().unwrap();
-            recovered.read(&mut buffer).unwrap();
+            let _ = recovered.read(&mut buffer).unwrap();
             write!(
                 recovered,
                 "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{{}}"
@@ -1639,7 +1610,6 @@ mod tests {
             serde_json::json!({"code":200,"lrc":{"lyric":"[00:01.00]first\n[00:05.00]second"}})
                 .to_string();
         let (netease, worker) = serve(vec![("200 OK", search), ("200 OK", lyric)]);
-        // 不可达的备用地址不应影响主源正常返回。
         assert!(
             fetch_with_sources(
                 Some(&netease),
@@ -1801,7 +1771,6 @@ mod tests {
 
     #[test]
     fn netease_text_lyrics_with_timed_credits_are_not_treated_as_synced() {
-        // 网易云「暂无自动滚动」：只有署名带时间，正文没有时间戳。
         let raw = "[00:00.000] 作词 : 陈玥凝\n[00:01.000] 作曲 : 何佩欣\n第一句正文\n第二句正文\n";
         let lyrics = lyrics_from_text(raw);
         assert!(!lyrics.synced, "只有署名带时间时不能在岛上冒充同步歌词");
@@ -1849,7 +1818,6 @@ mod tests {
         assert_eq!(lyrics.lines[0].text, "同步歌词");
         first.join().unwrap();
         second.join().unwrap();
-        // 其他来源都没有同步歌词时退回网易云的文本歌词，不报错。
         let search=serde_json::json!({"code":200,"result":{"songs":[{"id":7,"name":"Track","artists":[{"name":"Artist"}],"duration":120000}]}}).to_string();
         let plain = serde_json::json!({"code":200,"lrc":{"lyric":"只有文本"}}).to_string();
         let (netease, worker) = serve(vec![("200 OK", search), ("200 OK", plain)]);
@@ -1916,7 +1884,6 @@ mod tests {
         let plain = read_negative(&path).unwrap().unwrap();
         assert!(!plain.synced);
         assert_eq!(plain.lines.len(), 2);
-        // 超过 7 天视为过期，重新联网查询。
         let file = std::fs::OpenOptions::new()
             .write(true)
             .open(negative_path(&path))
@@ -1928,7 +1895,6 @@ mod tests {
         drop(file);
         assert!(read_negative(&path).is_none());
         std::fs::remove_file(negative_path(&path)).unwrap();
-        // 有来源断网时标记失败，调用方不会把「没找到」缓存下来。
         let rows = serde_json::json!([]).to_string();
         let (lrclib, worker) = serve(vec![("200 OK", rows)]);
         let (result, failed) = fetch_with_sources_detail(
@@ -1966,7 +1932,6 @@ mod tests {
 
     #[test]
     fn soda_fingerprint_is_cheap_metadata_only() {
-        // 没有汽水音乐时返回 None，轮询照常读取（读取本身也会立即失败）。
         if std::env::var_os("APPDATA").is_none() {
             assert!(native_fingerprint("汽水音乐").is_none());
         }
@@ -2001,20 +1966,17 @@ mod tests {
         let roman = r#"[{"trackName":"눈,코,입 (EYES,NOSE,LIPS)","artistName":"TAEYANG","duration":229,"syncedLyrics":"[00:01.00]Hoksi ireon na ttaeme himdeureonni\n[00:04.00]Amu daedap eomneun neo\n[00:07.00]Babocheoreom wae neoreul jiuji mothae"}]"#;
         let both = r#"[{"trackName":"눈,코,입 (EYES,NOSE,LIPS)","artistName":"TAEYANG","duration":229,"syncedLyrics":"[00:01.00]Hoksi ireon na ttaeme himdeureonni\n[00:04.00]Amu daedap eomneun neo\n[00:07.00]Babocheoreom wae neoreul jiuji mothae"},
             {"trackName":"눈,코,입 (EYES,NOSE,LIPS)","artistName":"TAEYANG","duration":235,"syncedLyrics":"[00:01.00]혹시 이런 나 땜에 힘들었니\n[00:04.00]아무 대답 없는 너"}]"#;
-        // 同一来源里原文优先，即使罗马音版本时长更接近。
         let (base, worker) = serve(vec![("200 OK", both.into())]);
         assert_eq!(
             fetch_from(&base, title, "TAEYANG", 229.0).unwrap().lines[0].text,
             "혹시 이런 나 땜에 힘들었니"
         );
         worker.join().unwrap();
-        // 只有罗马音时仍可显示，作为最后的备选。
         let (base, worker) = serve(vec![("200 OK", roman.into())]);
         let (result, _) =
             fetch_with_sources_detail(None, None, Some(&base), title, "TAEYANG", 229.0);
         assert!(romanized(title, &result.unwrap()));
         worker.join().unwrap();
-        // 前面的来源（网易云）给出罗马音时，继续向后（QQ 音乐）找原文。
         let search=serde_json::json!({"code":200,"result":{"songs":[{"id":3,"name":title,"artists":[{"name":"TAEYANG"}],"duration":229000}]}}).to_string();
         let lyric=serde_json::json!({"code":200,"lrc":{"lyric":"[00:01.00]Hoksi ireon na ttaeme himdeureonni\n[00:04.00]Amu daedap eomneun neo\n[00:07.00]Babocheoreom wae neoreul jiuji mothae"}}).to_string();
         let (netease, first) = serve(vec![("200 OK", search), ("200 OK", lyric)]);
@@ -2028,7 +1990,6 @@ mod tests {
         first.join().unwrap();
         second.join().unwrap();
         assert!(take_trace()[0].ends_with("(罗马音)"), "诊断日志标明罗马音");
-        // 已缓存的罗马音版本会被忽略。
         let path =
             std::env::temp_dir().join(format!("nexora-isle-roman-{}.lrc", std::process::id()));
         write_cache(&path,&parse_lrc("[00:01.00]Hoksi ireon na ttaeme himdeureonni\n[00:04.00]Amu daedap eomneun neo\n[00:07.00]Babocheoreom wae neoreul jiuji mothae"));

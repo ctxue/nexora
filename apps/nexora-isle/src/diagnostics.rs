@@ -1,5 +1,3 @@
-//! 启动错误与 Rust 异常保存在本机，不自动上传账号或应用数据。
-
 use std::path::{Path, PathBuf};
 
 fn write_report(directory: &Path, title: &str, details: &str) -> std::io::Result<PathBuf> {
@@ -59,7 +57,6 @@ pub fn report(title: &str, details: &str) {
     eprintln!("{text}");
 }
 
-/// 仅记录最近一次启动停留的阶段，不记录账号或用户内容。
 pub fn startup(stage: &str) {
     let directory = nexora_isle::model::config_dir().join("diagnostics");
     if std::fs::create_dir_all(&directory).is_ok() {
@@ -74,7 +71,6 @@ pub fn startup(stage: &str) {
     }
 }
 
-/// 记录实际使用的图形设备，避免把电脑里的显卡列表误当作当前渲染设备。
 pub fn graphics(cc: &eframe::CreationContext<'_>) {
     use eframe::glow::HasContext;
     let details = if let Some(gl) = &cc.gl {
@@ -103,7 +99,6 @@ pub fn graphics(cc: &eframe::CreationContext<'_>) {
 
 pub fn install() {
     std::panic::set_hook(Box::new(|info| {
-        // 不写入 panic 的数据载荷，避免把邮件、凭据或登录信息带进日志。
         let location = info
             .location()
             .map(|p| format!("{}:{}:{}", p.file(), p.line(), p.column()))
@@ -138,7 +133,6 @@ mod tests {
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains(env!("CARGO_PKG_VERSION")));
         assert!(content.contains("OpenGL 初始化失败"));
-        // 重复失败只保留最后一份，避免常驻程序无限累积日志。
         write_report(&directory, "第二次失败", "新的错误").unwrap();
         assert!(!std::fs::read_to_string(&path).unwrap().contains("OpenGL"));
         std::fs::remove_file(path).unwrap();

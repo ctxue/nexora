@@ -1,5 +1,3 @@
-//! Top-level window discovery and management for the window switcher.
-
 use std::path::Path;
 
 use windows::{

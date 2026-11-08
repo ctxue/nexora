@@ -1,10 +1,3 @@
-//! OpenGL 初始化失败时使用独立的图形后端。
-//!
-//! 典型场景：笔记本接扩展坞 / DisplayLink 外接屏、远程桌面、显卡驱动缺失时，窗口所在的显示设备
-//! 只有 Windows 自带的 OpenGL 1.1（GDI Generic），egui_glow 报「requires OpenGL 2.0+」。
-//! 这时改用 Direct3D 12 重新启动，不需要用户拔扩展坞。
-
-/// 兼容图形后端：Direct3D 12（低功耗显卡优先）。
 fn compatible(mut options: eframe::NativeOptions) -> eframe::NativeOptions {
     options.renderer = eframe::Renderer::Wgpu;
     if let eframe::egui_wgpu::WgpuSetup::CreateNew(setup) = &mut options.wgpu_options.wgpu_setup {
@@ -15,8 +8,6 @@ fn compatible(mut options: eframe::NativeOptions) -> eframe::NativeOptions {
     options
 }
 
-/// 验收与排障：设置环境变量 `NEXORA_ISLE_RENDERER=wgpu` 直接使用兼容图形后端，
-/// 在正常电脑上也能检查 OpenGL 失败后用户会看到的画面。
 fn forced_compatible() -> bool {
     std::env::var("NEXORA_ISLE_RENDERER")
         .is_ok_and(|value| value.trim().eq_ignore_ascii_case("wgpu"))

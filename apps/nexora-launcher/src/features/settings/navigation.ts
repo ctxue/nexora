@@ -31,7 +31,6 @@ export function requestSettingsSection(section: SettingsSectionId | null) {
       window.localStorage.removeItem(SETTINGS_SECTION_REQUEST_KEY);
     }
   } catch {
-    // Navigation is a convenience; the settings window still opens normally.
   }
 }
 

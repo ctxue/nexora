@@ -1,3 +1,5 @@
+// Launcher state machine for querying, result navigation, and command execution.
+
 import {
   useCallback,
   useDeferredValue,
@@ -88,7 +90,6 @@ function saveRecents(items: RecentItem[]) {
   try {
     window.localStorage.setItem(RECENTS_KEY, JSON.stringify(items));
   } catch {
-    // Recents are a convenience; a full storage quota must not break search.
   }
 }
 
@@ -159,7 +160,6 @@ export function useLauncher({
   const hide = useCallback(() => {
     clearQuery();
     void platform.hide().catch(() => {
-      // The window may already be hidden.
     });
   }, [clearQuery]);
 
@@ -641,8 +641,6 @@ export function useLauncher({
           .map((entry) => commandItem(entry.command))
       : [];
 
-    // Commands are actions, so they come before apps and files. Custom
-    // commands sit ahead of the built-in ones.
     const commandBase = base.find((group) => group.id === "command");
     const commandItems = commandBase?.items ?? [];
     const driveItems = commandItems.filter((item) =>
@@ -811,7 +809,6 @@ export function useLauncher({
         if (mounted) setPaths(nextPaths);
       })
       .catch(() => {
-        // Folder commands fall back to a toast until paths are available.
       });
 
     void platform
@@ -866,8 +863,6 @@ export function useLauncher({
     };
   }, [clearQuery, settings.fileSearch, showToast, t]);
 
-  // Drives can change while the launcher is hidden (USB sticks, mapped drives),
-  // so refresh them every time the window is shown.
   useEffect(() => {
     let mounted = true;
 
@@ -877,7 +872,6 @@ export function useLauncher({
         if (mounted) setDrives(next);
       })
       .catch(() => {
-        // Drive search is optional; keep the last known list on failure.
       });
 
     return () => {
@@ -893,7 +887,6 @@ export function useLauncher({
         if (mounted) setWindows(next);
       })
       .catch(() => {
-        // Window search is optional and must not block normal launcher use.
       });
     return () => {
       mounted = false;
@@ -904,7 +897,6 @@ export function useLauncher({
     const trimmed = searchFilters.text.trim();
     const requestId = ++searchRequest.current;
 
-    // Inside a command scope the text is the command argument, not a file query.
     if (
       !settings.fileSearch ||
       !trimmed ||
@@ -1022,8 +1014,6 @@ export function useLauncher({
     if (item.kind !== "app" && item.kind !== "file" && item.kind !== "command") {
       return;
     }
-    // Plugin results are ephemeral (they depend on the query), so they never
-    // enter the recent list.
     if (item.id.startsWith("plugin:")) return;
 
     setRecents((current) => {

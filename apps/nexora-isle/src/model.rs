@@ -1,8 +1,7 @@
-//! Persistent NEXORA ISLE state and data models.
+//! Persistent settings and local data models.
 //!
-//! Data is stored under `%APPDATA%\NEXORA\Isle`. The
-//! `NEXORA_ISLE_DATA_DIR` environment variable overrides the root for tests and
-//! portable use.
+//! Files are stored below `%APPDATA%\NEXORA\Isle`. Parsers tolerate older
+//! layouts, but every save writes a complete atomic snapshot.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -79,7 +78,6 @@ fn replace_file(tmp: &Path, path: &Path) -> std::io::Result<()> {
         use windows::Win32::Storage::FileSystem::{
             MoveFileExW, MOVEFILE_COPY_ALLOWED, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
         };
-        // Windows 目录映射可能将同目录替换报告为跨卷，交给系统复制并替换。
         let source: Vec<u16> = tmp.as_os_str().encode_wide().chain(Some(0)).collect();
         let target: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
         return unsafe {
@@ -94,7 +92,6 @@ fn replace_file(tmp: &Path, path: &Path) -> std::io::Result<()> {
     result
 }
 
-/// 岛体形状：贴着屏幕顶边的刘海，或悬浮在顶边下方的胶囊。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum IslandShape {
     #[default]
@@ -145,7 +142,6 @@ impl IslandShape {
     }
 }
 
-/// 岛体停靠的屏幕边缘：顶部为横向刘海 / 胶囊，左右两侧为竖向排列。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Dock {
     #[default]
@@ -189,31 +185,19 @@ impl Dock {
     }
 }
 
-/// 岛体大小（百分比）的范围与步进。
-pub const ISLAND_SIZE_MIN: u32 = 80;
-pub const ISLAND_SIZE_MAX: u32 = 140;
-pub const ISLAND_SIZE_STEP: u32 = 5;
-/// 水平位置：-100 = 最左，0 = 居中，100 = 最右（按可移动范围的百分比）。
 pub const ISLAND_OFFSET_MAX: i32 = 100;
-
-pub fn island_size_value(value: u32) -> u32 {
-    let value = value.clamp(ISLAND_SIZE_MIN, ISLAND_SIZE_MAX);
-    (value + ISLAND_SIZE_STEP / 2) / ISLAND_SIZE_STEP * ISLAND_SIZE_STEP
-}
 
 #[derive(Clone, Debug)]
 pub struct Settings {
     pub language: crate::i18n::Language,
     pub display_id: String,
-    /// 岛体形状、大小百分比和水平位置。
     pub island_shape: IslandShape,
-    pub island_size: u32,
     pub island_offset: i32,
-    /// 停靠边缘；左右停靠时 `island_offset` 表示上下位置。
     pub dock: Dock,
     pub settings_theme: crate::settings_theme::SettingsTheme,
     pub pet: bool,
     pub minimal: bool,
+    pub expand_on_hover: bool,
     pub browser_minimal: bool,
     pub avoid_browsers: bool,
     pub avoid_apps: Vec<(String, String)>,
@@ -227,7 +211,7 @@ pub struct Settings {
     pub bluetooth_notifications: bool,
     pub read_notifications: bool,
     pub wechat_notifications: bool,
-    /// 微信缩在托盘时，点提醒通过系统托盘按钮唤起微信（默认关闭）。
+    pub qq_notifications: bool,
     pub wechat_tray_open: bool,
     pub notification_preview: bool,
     pub notifications: bool,
@@ -236,16 +220,12 @@ pub struct Settings {
     pub island_lyrics: bool,
     pub lyric_delay_ms: i32,
     pub hide_fullscreen: bool,
-    /// Mail preview: master switch, verification-code highlighting, poll interval.
     pub mail_enabled: bool,
     pub mail_code: bool,
     pub mail_code_hide_seconds: u32,
     pub mail_interval: u32,
-    /// 记录最近复制的文字（最近记录与固定条目均在本机保存）。
     pub clipboard_history: bool,
-    /// 记录复制或截取的图片（原图保存在本机数据目录）。
     pub clipboard_images: bool,
-    /// System monitor page and threshold alerts.
     pub monitor_enabled: bool,
     pub monitor_alerts: bool,
     pub monitor_cpu_threshold: u32,
@@ -259,12 +239,12 @@ impl Default for Settings {
             language: crate::i18n::Language::Zh,
             display_id: String::new(),
             island_shape: IslandShape::Notch,
-            island_size: 100,
             island_offset: 0,
             dock: Dock::Top,
             settings_theme: Default::default(),
             pet: true,
             minimal: false,
+            expand_on_hover: false,
             browser_minimal: false,
             avoid_browsers: true,
             avoid_apps: Vec::new(),
@@ -276,9 +256,10 @@ impl Default for Settings {
             resident_order: Vec::new(),
             system_hud: true,
             bluetooth_notifications: true,
-            read_notifications: false,
-            wechat_notifications: false,
-            wechat_tray_open: false,
+            read_notifications: true,
+            wechat_notifications: true,
+            qq_notifications: true,
+            wechat_tray_open: true,
             notification_preview: false,
             notifications: true,
             sound: false,
@@ -302,12 +283,6 @@ impl Default for Settings {
 }
 
 impl Settings {
-    /// 主窗口（灵动岛）的界面缩放倍率。
-    pub fn island_scale(&self) -> f32 {
-        island_size_value(self.island_size) as f32 / 100.0
-    }
-
-    /// 水平位置，-1..=1。
     pub fn island_offset_ratio(&self) -> f32 {
         self.island_offset
             .clamp(-ISLAND_OFFSET_MAX, ISLAND_OFFSET_MAX) as f32
@@ -347,6 +322,15 @@ impl Settings {
         format!("{period} {digits}")
     }
 
+    pub fn normalize_display_mode(&mut self) {
+        if !self.pet && !self.minimal {
+            self.pet = true;
+        }
+        if self.pet && self.minimal {
+            self.pet = false;
+        }
+    }
+
     pub fn load() -> Self {
         let mut s = Self::default();
         let values = read_kv(&config_dir().join("settings.txt"));
@@ -364,7 +348,6 @@ impl Settings {
                 "display_id" => s.display_id = v,
                 "island_shape" => s.island_shape = IslandShape::parse(&v),
                 "dock" => s.dock = Dock::parse(&v),
-                "island_size" => s.island_size = island_size_value(v.parse::<u32>().unwrap_or(100)),
                 "island_offset" => {
                     s.island_offset = v
                         .parse::<i32>()
@@ -373,6 +356,7 @@ impl Settings {
                 }
                 "pet" => s.pet = v == "1" || v.eq_ignore_ascii_case("true"),
                 "minimal" => s.minimal = v == "1" || v.eq_ignore_ascii_case("true"),
+                "expand_on_hover" => s.expand_on_hover = v == "1",
                 "browser_minimal" => s.browser_minimal = v == "1",
                 "avoid_browsers" => s.avoid_browsers = v != "0",
                 "avoid_apps" => s.avoid_apps = serde_json::from_str(&v).unwrap_or_default(),
@@ -438,6 +422,7 @@ impl Settings {
                 }
                 "read_notifications" => s.read_notifications = v == "1",
                 "wechat_notifications" => s.wechat_notifications = v == "1",
+                "qq_notifications" => s.qq_notifications = v == "1",
                 "wechat_tray_open" => s.wechat_tray_open = v == "1",
                 "notification_preview" => s.notification_preview = v == "1",
                 "system_hud" => s.system_hud = v != "0",
@@ -481,6 +466,7 @@ impl Settings {
         if !s.visible_pages.contains(&true) {
             s.visible_pages[page::MUSIC] = true;
         }
+        s.normalize_display_mode();
         s
     }
 
@@ -493,10 +479,6 @@ impl Settings {
                 ("display_id".into(), self.display_id.clone()),
                 ("island_shape".into(), self.island_shape.key().into()),
                 ("dock".into(), self.dock.key().into()),
-                (
-                    "island_size".into(),
-                    island_size_value(self.island_size).to_string(),
-                ),
                 (
                     "island_offset".into(),
                     self.island_offset
@@ -519,6 +501,10 @@ impl Settings {
                     } else {
                         "0".to_string()
                     },
+                ),
+                (
+                    "expand_on_hover".into(),
+                    (self.expand_on_hover as u8).to_string(),
                 ),
                 (
                     "browser_minimal".into(),
@@ -565,6 +551,10 @@ impl Settings {
                 (
                     "wechat_notifications".into(),
                     (self.wechat_notifications as u8).to_string(),
+                ),
+                (
+                    "qq_notifications".into(),
+                    (self.qq_notifications as u8).to_string(),
                 ),
                 (
                     "wechat_tray_open".into(),
@@ -669,7 +659,6 @@ impl Shelf {
         let _ = atomic_write(&path, body.as_bytes());
     }
 
-    /// Record file locations without copying file contents.
     pub fn add(&mut self, src: &Path) -> std::io::Result<()> {
         if !src.exists() {
             return Err(std::io::Error::new(
@@ -810,20 +799,34 @@ mod tests {
 
     #[test]
     fn island_appearance_values_are_normalized() {
-        assert_eq!(island_size_value(100), 100);
-        assert_eq!(island_size_value(10), ISLAND_SIZE_MIN);
-        assert_eq!(island_size_value(999), ISLAND_SIZE_MAX);
-        assert_eq!(island_size_value(113), 115);
-        assert_eq!(island_size_value(112), 110);
         for shape in IslandShape::ALL {
             assert_eq!(IslandShape::parse(shape.key()), shape);
         }
         assert_eq!(Settings::default().island_shape, IslandShape::Notch);
         let mut s = Settings::default();
-        assert_eq!((s.island_scale(), s.island_offset_ratio()), (1.0, 0.0));
-        s.island_size = 125;
+        assert_eq!(s.island_offset_ratio(), 0.0);
         s.island_offset = -250;
-        assert_eq!((s.island_scale(), s.island_offset_ratio()), (1.25, -1.0));
+        assert_eq!(s.island_offset_ratio(), -1.0);
+    }
+
+    #[test]
+    fn notifications_are_enabled_by_default_for_system_wechat_and_qq() {
+        let settings = Settings::default();
+        assert!(settings.notifications);
+        assert!(settings.read_notifications);
+        assert!(settings.wechat_notifications);
+        assert!(settings.qq_notifications);
+    }
+
+    #[test]
+    fn islands_expand_on_click_by_default_and_always_keep_one_display_mode() {
+        let mut settings = Settings::default();
+        assert!(!settings.expand_on_hover);
+        settings.minimal = false;
+        settings.pet = false;
+        settings.normalize_display_mode();
+        assert!(settings.pet);
+        assert!(!settings.minimal);
     }
 
     #[test]
@@ -925,7 +928,6 @@ mod tests {
     }
 }
 
-/// 仅保存应用标识与开关，不保存通知内容。
 #[derive(Clone, Debug, Default)]
 pub struct NotificationApps {
     pub items: Vec<(String, String, bool)>,

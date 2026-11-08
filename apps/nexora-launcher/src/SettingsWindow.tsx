@@ -54,7 +54,6 @@ function SettingsPage({
       setShortcutConflict(Boolean(status.error));
       setActiveShortcut(status.current);
     } catch {
-      // Keep the last known state if the native command is unavailable.
     }
   }, []);
 
@@ -67,8 +66,6 @@ function SettingsPage({
         updateSettings({ shortcut });
         return true;
       } catch {
-        // Keep the attempted shortcut visible so the conflicting field can be
-        // marked and the user can immediately record a replacement.
         updateSettings({ shortcut });
         await refreshShortcutStatus();
         return false;
@@ -95,7 +92,6 @@ function SettingsPage({
       await platform.setGlobalShortcut(DEFAULT_SETTINGS.shortcut);
       await platform.setLaunchAtStartup(false);
     } catch {
-      // Keep local defaults even if an OS-level registration is unavailable.
     }
     updateSettings(DEFAULT_SETTINGS);
     await refreshShortcutStatus();

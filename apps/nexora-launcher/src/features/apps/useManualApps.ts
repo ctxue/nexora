@@ -7,7 +7,6 @@ import {
   type ManualApp,
 } from "./storage";
 
-/** Applications the user added by hand (portable apps, folders of exes). */
 export function useManualApps() {
   const [apps, setApps] = useState<ManualApp[]>(loadManualApps);
 

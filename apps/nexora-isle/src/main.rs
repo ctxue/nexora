@@ -1,5 +1,8 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
-//! Windows 外壳：无边框透明窗口 + 托盘 + 系统数据，界面全部交给 `nexora_isle::app::App`。
+//! Native NEXORA ISLE shell.
+//!
+//! This entry point owns Windows windows, tray integration, system services,
+//! and settings viewports. UI behavior remains in `nexora_isle::app::App`.
 
 use eframe::egui::{self, Color32, Pos2};
 use nexora_isle::app::{self, App, Cmd, Env, Options};
@@ -26,7 +29,6 @@ struct Shell {
     placed: bool,
     placement_at: PollClock,
     placement_scale: f32,
-    /// 上次定位时的目标屏幕与水平位置；变化后立即重新定位，不等下一次轮询。
     placement_key: (String, i32, nexora_isle::model::Dock),
     win_x: f32,
     sys: (Option<u8>, bool, PollClock),
@@ -48,7 +50,6 @@ struct Shell {
     wechat_retry: Option<Instant>,
     #[cfg(windows)]
     opening_messenger: Option<(app::Unread, Instant)>,
-    /// 后台线程正在通过托盘按钮唤起微信。
     #[cfg(windows)]
     tray_opening: Option<(app::Unread, std::sync::mpsc::Receiver<Result<(), String>>)>,
     #[cfg(windows)]
@@ -56,16 +57,16 @@ struct Shell {
     #[cfg(windows)]
     native: Option<nexora_isle::native::Window>,
     #[cfg(windows)]
+    topmost_at: PollClock,
+    #[cfg(windows)]
     tray: Option<nexora_isle::tray::Tray>,
     #[cfg(windows)]
     autostart: bool,
-    /// 蓝牙音频设备（后台线程推送）与音量回声的静默窗口。
     #[cfg(windows)]
     bt_rx: Option<nexora_isle::bt::Service>,
     bt: Vec<nexora_isle::bt::Device>,
     bt_ready: bool,
     volume_quiet: PollClock,
-    /// 邮件收信服务（工作线程），以及上次同步给它的账号与开关快照。
     mail: nexora_isle::mail::Service,
     mail_sig: (u32, Vec<nexora_isle::mail::Account>),
 }
@@ -119,7 +120,6 @@ impl Shell {
         } else {
             None
         };
-        // 音频、网络与输入法查询由后台完成，避免首帧等待系统服务。
         diagnostics::startup("创建后台采样与窗口");
         let initial_input = None;
         #[cfg(windows)]
@@ -127,9 +127,10 @@ impl Shell {
         #[cfg(windows)]
         let system_rx =
             nexora_isle::system::observe(cc.egui_ctx.clone(), system_state.clone(), initial_input);
-        // 岛体大小只作用于主窗口，在首帧之前生效，避免启动时先按 100% 闪一下。
-        #[cfg(windows)]
-        eframe::set_root_viewport_scale(app.settings.island_scale());
+        let mail = nexora_isle::mail::Service::start();
+        let mail_accounts = app.mail_accounts().to_vec();
+        let mail_interval = app.settings.mail_interval;
+        mail.sync(&mail_accounts, mail_interval);
         Self {
             app,
             t0: Instant::now(),
@@ -176,6 +177,8 @@ impl Shell {
             #[cfg(windows)]
             native: nexora_isle::native::Window::new(cc),
             #[cfg(windows)]
+            topmost_at: PollClock::default(),
+            #[cfg(windows)]
             tray,
             #[cfg(windows)]
             autostart,
@@ -184,8 +187,8 @@ impl Shell {
             bt: Vec::new(),
             bt_ready: false,
             volume_quiet: PollClock::default(),
-            mail: nexora_isle::mail::Service::start(),
-            mail_sig: (0, Vec::new()),
+            mail,
+            mail_sig: (mail_interval, mail_accounts),
         }
     }
 
@@ -237,13 +240,6 @@ impl Shell {
                         self.app.say(error);
                     }
                 }
-                Event::OpenImagesFolder => {
-                    let directory = nexora_isle::model::config_dir().join("clipboard-images");
-                    let _ = std::fs::create_dir_all(&directory);
-                    if let Err(error) = open_path(&directory) {
-                        self.app.say(error);
-                    }
-                }
                 Event::CheckUpdates => {
                     self.app.check_updates(ctx);
                 }
@@ -262,7 +258,6 @@ impl Shell {
     fn env(&mut self, ctx: &egui::Context) -> Env {
         let language = self.app.settings.language;
         let clock = local_now();
-        // 电量变化很慢，每 5 秒读一次就够
         if self.sys.2.ready(Duration::from_secs(5)) {
             let (b, c) = read_power();
             if self.app.settings.show_battery
@@ -310,7 +305,7 @@ impl Shell {
             }
             self.sys = (b, c, PollClock::now());
         }
-        let ppp = ctx.pixels_per_point() * eframe::root_frame_paint_scale();
+        let ppp = ctx.pixels_per_point();
         let origin = ctx
             .input(|i| i.viewport().outer_rect)
             .map(|r| r.min)
@@ -322,7 +317,6 @@ impl Shell {
             .and_then(|w| w.logical_origin(ppp))
             .unwrap_or(origin);
         let cursor = cursor_logical(ppp).map(|(x, y)| Pos2::new(x - origin.x, y - origin.y));
-        // 所在屏幕换算到窗口逻辑坐标，供通知详情等浮层避开屏幕边缘。
         #[cfg(windows)]
         let screen = nexora_isle::display_layout::selected(
             &self.app.displays,
@@ -415,7 +409,6 @@ impl eframe::App for Shell {
         }
         let guarded = nexora_isle::resources::GUARD.tripped();
         if guarded && !self.guard_notified {
-            // 资源保护熔断：停止音乐会话轮询（含封面、网易云日志）与歌词查询，保住用户电脑，重启后恢复。
             self.guard_notified = true;
             self.app.opts.fetch_lyrics = false;
             self.app.alert(
@@ -434,14 +427,8 @@ impl eframe::App for Shell {
                 && !guarded,
             std::sync::atomic::Ordering::Relaxed,
         );
-        // 设置里改了岛体大小：下一帧起主窗口按新倍率栅格化，定位逻辑随像素比变化同步调整画布。
-        #[cfg(windows)]
-        eframe::share_root_font_scale(self.app.settings_open);
-        #[cfg(windows)]
-        eframe::set_root_viewport_scale(self.app.settings.island_scale());
         #[cfg(windows)]
         {
-            // 用帧间隔限制刷新，绕过部分 Intel 驱动在垂直同步中的忙等待。
             let delay = Duration::from_secs_f64(1.0 / 60.0).saturating_sub(self.frame_at.elapsed());
             if !delay.is_zero() {
                 std::thread::sleep(delay);
@@ -454,7 +441,6 @@ impl eframe::App for Shell {
         let foreground_changed = nexora_isle::native::take_foreground_change();
         #[cfg(windows)]
         if foreground_changed {
-            // 切到别的程序：收起，并在光标离开前不再自动展开
             self.app.foreground_changed();
         }
         #[cfg(windows)]
@@ -465,12 +451,12 @@ impl eframe::App for Shell {
         );
         #[cfg(windows)]
         if !self.placed
-            || self.placement_scale != (ctx.pixels_per_point() * eframe::root_frame_paint_scale())
+            || self.placement_scale != ctx.pixels_per_point()
             || self.placement_key != placement_key
             || self.placement_at.ready(Duration::from_secs(1))
         {
             self.placement_at = PollClock::now();
-            self.placement_scale = ctx.pixels_per_point() * eframe::root_frame_paint_scale();
+            self.placement_scale = ctx.pixels_per_point();
             self.placement_key = placement_key;
             self.app.displays = nexora_isle::display_layout::connected();
             let display = nexora_isle::display_layout::selected(
@@ -494,7 +480,6 @@ impl eframe::App for Shell {
                 self.placed = true;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
             } else if self.t0.elapsed() >= Duration::from_secs(2) {
-                // Do not leave a hidden startup window forever when monitor discovery fails.
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
             }
         }
@@ -532,13 +517,11 @@ impl eframe::App for Shell {
                     }
                 }
                 let new = observation.system;
-                // 切换输出设备时，系统会恢复该设备的音量；等待它稳定后再提示调节。
                 if new.audio_endpoint != self.system_state.audio_endpoint {
                     self.volume_quiet = PollClock::now();
                 }
                 if self.system_ready && self.app.settings.system_hud {
                     for (title, body) in new.changes_for(&self.system_state, language) {
-                        // 拖动音量条刚改过音量时，系统回声不再单独弹一条。
                         if title == language.text("系统音量", "System volume")
                             && !self.volume_quiet.ready(Duration::from_millis(900))
                         {
@@ -639,7 +622,6 @@ impl eframe::App for Shell {
                 }
             }
             if foreground_changed || self.app.pending_messengers.len() != previous_pending {
-                // 在微信 / QQ 里打开了某个账号的窗口：清掉这个账号的未读。
                 let mut sources: Vec<app::Messenger> = self
                     .app
                     .pending_messengers
@@ -742,7 +724,6 @@ impl eframe::App for Shell {
         while let Some(snapshot) = self.monitor.try_recv() {
             self.app.monitor_snapshot(snapshot);
         }
-        // 开关、间隔或账号清单变化后重新对齐收信线程，再把事件交给界面。
         let sig = (
             self.app.settings.mail_interval,
             self.app.mail_accounts().to_vec(),
@@ -758,7 +739,6 @@ impl eframe::App for Shell {
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(Color32::TRANSPARENT))
             .show(ctx, |ui| {
-                // 左右停靠时画布是竖向的 SIDE_W × SIDE_H。
                 let size = if self.app.settings.dock.is_side() {
                     egui::vec2(
                         nexora_isle::side_dock::SIDE_W,
@@ -775,7 +755,6 @@ impl eframe::App for Shell {
         #[cfg(windows)]
         if let Some(native) = &mut self.native {
             let r = |r: egui::Rect| (r.left(), r.top(), r.width(), r.height());
-            // 保留主窗口的事件循环，避免全屏隐藏后设置窗口无法关闭或重新打开。
             let region = if self.hidden {
                 (0.0, 0.0, 0.0, 0.0)
             } else {
@@ -804,12 +783,17 @@ impl eframe::App for Shell {
                 } else {
                     out.window_shape.as_deref()
                 },
-                ctx.pixels_per_point() * eframe::root_frame_paint_scale(),
+                ctx.pixels_per_point(),
                 out.editing,
                 !self.hidden && out.expanded,
             );
-            if out.raise_window {
+            let pointer_inside = env.cursor.is_some_and(|cursor| out.hit.contains(cursor));
+            if !self.hidden
+                && should_maintain_topmost(self.app.notice_visible(), out.expanded, pointer_inside)
+                && self.topmost_at.ready(Duration::from_millis(250))
+            {
                 native.raise_topmost();
+                self.topmost_at = PollClock::now();
             }
         }
         for cmd in out.cmds {
@@ -846,7 +830,8 @@ impl eframe::App for Shell {
                         });
                     }
                 }
-                Cmd::ViewMessenger(unread) => {
+                Cmd::ViewMessenger(unread) =>
+                {
                     #[cfg(windows)]
                     match nexora_isle::wechat::open_unread(unread) {
                         Ok(()) => match nexora_isle::wechat::foreground_client(&[unread.source]) {
@@ -863,7 +848,6 @@ impl eframe::App for Shell {
                         {
                             match nexora_isle::wechat::wechat_in_tray(unread) {
                                 Ok(()) => {
-                                    // 缩在托盘：后台线程按下该账号的托盘按钮，不阻塞界面。
                                     let (tx, rx) = std::sync::mpsc::channel();
                                     let repaint = ctx.clone();
                                     std::thread::spawn(move || {
@@ -923,6 +907,30 @@ impl eframe::App for Shell {
                         });
                     }
                     ctx.input_mut(|i| i.pointer = Default::default());
+                }
+                Cmd::SaveImageAs {
+                    suggested_name,
+                    png,
+                } => {
+                    #[cfg(windows)]
+                    match nexora_isle::system::save_png_as(
+                        language.text("图片另存为", "Save image as"),
+                        &suggested_name,
+                        self.native.as_ref().map(nexora_isle::native::Window::hwnd),
+                        png.as_slice(),
+                    ) {
+                        Ok(Some(path)) => self.app.say(if language.is_en() {
+                            format!("Saved to {}", path.display())
+                        } else {
+                            format!("已保存到 {}", path.display())
+                        }),
+                        Ok(None) => {}
+                        Err(error) => self.app.say(if language.is_en() {
+                            format!("Could not save image: {}", error.code())
+                        } else {
+                            format!("无法保存图片：{}", error.code())
+                        }),
+                    }
                 }
                 Cmd::DisconnectNotifications => {
                     #[cfg(windows)]
@@ -1043,59 +1051,14 @@ impl eframe::App for Shell {
     }
 }
 
-// ---------------- 系统信息 ----------------
-
 fn schedule_repaint(ctx: &egui::Context, interval: Duration) {
-    // egui 会预减一帧；本程序自行调度刷新，补回后才能保持实际的等待间隔。
     let predicted = ctx.input(|i| Duration::from_secs_f32(i.predicted_dt));
     ctx.request_repaint_after(interval.saturating_add(predicted));
 }
 
-#[cfg(test)]
-mod repaint_tests {
-    use super::*;
-
-    fn scheduled_delay(interval: Duration, immediate: bool) -> Duration {
-        let ctx = egui::Context::default();
-        let mut delay = Duration::ZERO;
-        for frame in 0..4 {
-            let output = ctx.run(
-                egui::RawInput {
-                    time: Some(frame as f64),
-                    predicted_dt: 1.0 / 60.0,
-                    ..Default::default()
-                },
-                |ctx| {
-                    if immediate {
-                        ctx.request_repaint();
-                    }
-                    schedule_repaint(ctx, interval);
-                },
-            );
-            delay = output.viewport_output[&egui::ViewportId::ROOT].repaint_delay;
-        }
-        delay
-    }
-
-    #[test]
-    fn background_repaint_keeps_the_requested_frame_interval() {
-        for fps in [60.0, 30.0, 20.0, 10.0, 1.0] {
-            let interval = Duration::from_secs_f64(1.0 / fps);
-            let actual = scheduled_delay(interval, false);
-            assert!(
-                actual.abs_diff(interval) < Duration::from_micros(1),
-                "目标 {fps} 帧不应被提前唤醒：{actual:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn interaction_and_service_events_still_repaint_immediately() {
-        assert_eq!(
-            scheduled_delay(Duration::from_secs(1), true),
-            Duration::ZERO
-        );
-    }
+#[cfg(windows)]
+fn should_maintain_topmost(_notice_visible: bool, _expanded: bool, _pointer_inside: bool) -> bool {
+    true
 }
 
 #[cfg(windows)]
@@ -1192,7 +1155,6 @@ fn main() -> std::process::ExitCode {
 }
 
 fn run() -> eframe::Result<()> {
-    // 单实例互斥体
     #[cfg(windows)]
     if !nexora_isle::tray::single_instance() {
         if !nexora_isle::tray::activate_existing() {
@@ -1224,4 +1186,60 @@ fn run() -> eframe::Result<()> {
             Box::new(|cc| Ok(Box::new(Shell::new(cc)))),
         )
     })
+}
+
+#[cfg(test)]
+mod repaint_tests {
+    use super::*;
+
+    fn scheduled_delay(interval: Duration, immediate: bool) -> Duration {
+        let ctx = egui::Context::default();
+        let mut delay = Duration::ZERO;
+        for frame in 0..4 {
+            let output = ctx.run(
+                egui::RawInput {
+                    time: Some(frame as f64),
+                    predicted_dt: 1.0 / 60.0,
+                    ..Default::default()
+                },
+                |ctx| {
+                    if immediate {
+                        ctx.request_repaint();
+                    }
+                    schedule_repaint(ctx, interval);
+                },
+            );
+            delay = output.viewport_output[&egui::ViewportId::ROOT].repaint_delay;
+        }
+        delay
+    }
+
+    #[test]
+    fn background_repaint_keeps_the_requested_frame_interval() {
+        for fps in [60.0, 30.0, 20.0, 10.0, 1.0] {
+            let interval = Duration::from_secs_f64(1.0 / fps);
+            let actual = scheduled_delay(interval, false);
+            assert!(
+                actual.abs_diff(interval) < Duration::from_micros(1),
+                "目标 {fps} 帧不应被提前唤醒：{actual:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn interaction_and_service_events_still_repaint_immediately() {
+        assert_eq!(
+            scheduled_delay(Duration::from_secs(1), true),
+            Duration::ZERO
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn visible_idle_island_still_reasserts_highest_topmost_order() {
+        assert!(should_maintain_topmost(true, false, false));
+        assert!(should_maintain_topmost(false, true, false));
+        assert!(should_maintain_topmost(false, false, true));
+        assert!(should_maintain_topmost(false, false, false));
+    }
 }

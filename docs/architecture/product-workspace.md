@@ -5,7 +5,7 @@
 根目录是工作区，不是某个产品的源码目录。
 
 - `apps/nexora-launcher` 是 NEXORA 启动器产品。
-- `apps/nexora-isle` 是 NEXORA ISLE · 星屿产品。
+- `apps/nexora-isle` 是 NEXORA ISLE · 岛屿产品。
 - `products.psd1` 是产品注册表。
 - `scripts/products.ps1` 是唯一的产品命令分发器。
 - 根 `release/` 是联合发布暂存目录。

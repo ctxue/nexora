@@ -1,21 +1,12 @@
-//! 左右停靠：岛体贴在屏幕左 / 右边缘，收起时是竖向胶囊，展开后面板从边缘滑出。
-//!
-//! 展开后的页面内容与顶部停靠相同，只是锚点换到侧边；
-//! Collapsed side mode shows time, battery, playback, and notifications.
-//! 岛屿表情和岛屿歌词是横向内容，侧边停靠时不显示。
-
 use crate::app::{App, Env, BAR_H_MIN, BAR_W_MIN, PILL_GAP};
 use crate::model::{Dock, IslandShape};
 use crate::paint::{self, Card, H};
 use crate::theme::{self, W};
 use eframe::egui::{Color32, Pos2, Rect, Vec2};
 
-/// 侧边停靠时的透明画布（窗口）大小，逻辑点。
 pub const SIDE_W: f32 = 500.0;
 pub const SIDE_H: f32 = 600.0;
-/// 收起时竖向胶囊的厚度。
 pub const SIDE_BAR_W: f32 = 36.0;
-/// 岛体中心能离开屏幕竖直中线的预留：展开面板（最高约 236）与肩部、阴影留在屏幕内。
 pub const SIDE_HALF_EXTENT: f32 = 150.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -45,7 +36,6 @@ impl App {
         self.settings.dock.is_side()
     }
 
-    /// 竖向胶囊里依次显示的内容。
     pub(crate) fn side_items(&self) -> Vec<SideItem> {
         let mut items = vec![SideItem::Clock];
         if self.settings.show_battery && self.resident_power.0.is_some() {
@@ -60,12 +50,10 @@ impl App {
         items
     }
 
-    /// 收起时竖向胶囊的长度。
     pub(crate) fn side_bar_len(&self) -> f32 {
         14.0 + self.side_items().iter().map(|i| i.height()).sum::<f32>()
     }
 
-    /// 收起态尺寸（屏幕宽 × 高）。极简模式是贴边的一小段竖线。
     pub(crate) fn side_base_size(&self, minimal: bool) -> (f32, f32) {
         if minimal {
             (BAR_H_MIN, BAR_W_MIN)
@@ -82,8 +70,6 @@ impl App {
         }
     }
 
-    /// 宽 `w`、高 `h` 的岛体在画布 `win` 里的位置：顶部停靠水平居中贴顶，
-    /// 左右停靠贴边、竖直居中。
     pub(crate) fn island_rect(&self, win: Rect, w: f32, h: f32) -> Rect {
         let gap = self.side_gap();
         match self.dock() {
@@ -102,12 +88,6 @@ impl App {
         }
     }
 
-    /// 展开面板（页面内容）的左上角。
-    pub(crate) fn content_origin(&self, win: Rect) -> Pos2 {
-        self.island_rect(win, self.w.pos, self.h.pos).min
-    }
-
-    /// 侧边停靠的命中区域：收起时是胶囊外扩几点并一直延伸到屏幕边缘，展开时是整个面板。
     pub(crate) fn side_hit_rect(&self, win: Rect, p: f32) -> Rect {
         let rect = if p > 0.04 || self.open {
             self.island_rect(win, self.w.pos, self.h.pos)
@@ -116,7 +96,6 @@ impl App {
             let (w, h) = (self.w.pos, self.h.pos);
             self.island_rect(win, w, h).expand2(Vec2::new(4.0, 6.0))
         };
-        // 光标推到屏幕最边上也要能唤出岛（胶囊离边缘有一小段空隙）。
         match self.dock() {
             Dock::Left => Rect::from_min_max(Pos2::new(win.left(), rect.top()), rect.max),
             Dock::Right => Rect::from_min_max(rect.min, Pos2::new(win.right(), rect.bottom())),
@@ -124,7 +103,6 @@ impl App {
         }
     }
 
-    /// 竖向胶囊的内容。`c` 的原点是胶囊左上角。
     pub(crate) fn side_bar(&mut self, c: &Card, width: f32, height: f32, env: &Env) {
         let items = self.side_items();
         let total: f32 = items.iter().map(|i| i.height()).sum();
@@ -173,7 +151,6 @@ impl App {
     }
 }
 
-/// 竖排时间：「09:41」→ 「09」「41」；12 小时制去掉上午 / 下午等文字。
 pub(crate) fn side_clock(text: &str) -> (String, String) {
     let digits: String = text
         .chars()

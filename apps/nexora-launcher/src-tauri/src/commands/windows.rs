@@ -1,5 +1,3 @@
-//! Open-window discovery and control.
-
 use crate::{models::WindowEntry, windows};
 
 #[tauri::command]

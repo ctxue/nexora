@@ -1,6 +1,5 @@
 import type { WindowEntry } from "./types";
 
-/** Lightweight local search keeps window enumeration and scoring independent. */
 export function searchWindows(
   windows: WindowEntry[],
   rawQuery: string,

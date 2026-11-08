@@ -4,7 +4,6 @@ export interface ManualApp {
   path: string;
 }
 
-/** localStorage key holding applications added by hand (portable apps). */
 export const MANUAL_APPS_KEY = "nexora.apps.v1";
 
 function nameFromPath(path: string): string {
@@ -13,7 +12,6 @@ function nameFromPath(path: string): string {
   return name || file;
 }
 
-/** Exposed so the settings page can name a folder scan result. */
 export function appNameFromPath(path: string): string {
   return nameFromPath(path);
 }
@@ -60,11 +58,9 @@ export function saveManualApps(apps: ManualApp[]) {
   try {
     window.localStorage.setItem(MANUAL_APPS_KEY, JSON.stringify(apps));
   } catch {
-    // A full quota must not break app search.
   }
 }
 
-/** Merges hand-added apps into the scanned list, skipping duplicates. */
 export function mergeManualApps(
   scanned: Array<{ id: string; name: string; path: string; source: string }>,
   manual: ManualApp[],
@@ -90,7 +86,6 @@ export function mergeManualApps(
   return extra.length === 0 ? scanned : [...scanned, ...extra];
 }
 
-/** Merges apps found in the configured index folders into the scanned list. */
 export function mergeIndexedApps(
   scanned: Array<{ id: string; name: string; path: string; source: string }>,
   indexed: Array<{ id: string; name: string; path: string; source: string }>,

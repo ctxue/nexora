@@ -1,5 +1,3 @@
-//! Small networking helpers shared by mail and update channels.
-
 #[cfg(not(windows))]
 pub(crate) fn system_proxy() -> Option<String> {
     None

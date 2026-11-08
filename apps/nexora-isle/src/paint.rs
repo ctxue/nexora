@@ -1,8 +1,3 @@
-//! 面板内绘制：局部坐标画布 `Card` + 全部矢量图标。
-//!
-//! `Card` 把「面板局部逻辑点」映射到屏幕，并自带裁剪、整体透明度与可交互开关：
-//! 切页时旧页用 `live = false` 的画布绘制，只画不响应点击，也不会和新页抢 id。
-
 use crate::theme::{self, font, W};
 use eframe::egui::{self, Color32, FontId, Id, Pos2, Rect, Response, Sense, Stroke, Vec2};
 use std::f32::consts::{FRAC_PI_2, PI, TAU};
@@ -23,6 +18,7 @@ pub struct Card<'a> {
     pub live: bool,
 }
 
+#[allow(clippy::too_many_arguments)]
 impl<'a> Card<'a> {
     pub fn new(ui: &'a egui::Ui, origin: Pos2, clip: Rect) -> Self {
         Self::on_painter(ui, ui.painter().clone(), origin, clip)
@@ -50,7 +46,6 @@ impl<'a> Card<'a> {
         Pos2::new(v.x, v.y)
     }
 
-    // ---------- 派生画布 ----------
     pub fn faded(&self, alpha: f32) -> Self {
         let mut c = self.clone();
         c.painter.multiply_opacity(alpha.clamp(0.0, 1.0));
@@ -61,7 +56,6 @@ impl<'a> Card<'a> {
         c.origin += Vec2::new(dx, dy) * self.s;
         c
     }
-    /// 以局部点 (cx, cy) 为中心整体缩放（按钮按下的回弹）。
     pub fn scaled(&self, cx: f32, cy: f32, k: f32) -> Self {
         let mut c = self.clone();
         let center = self.pos(cx, cy);
@@ -81,7 +75,6 @@ impl<'a> Card<'a> {
         c
     }
 
-    // ---------- 文字（y 一律是基线，跨字体对齐稳定） ----------
     pub fn font(&self, size: f32, w: W) -> FontId {
         font(size * self.s, w)
     }
@@ -92,7 +85,6 @@ impl<'a> Card<'a> {
     pub fn text_w(&self, t: &str, size: f32, w: W) -> f32 {
         self.galley(t, size, w, Color32::WHITE).size().x / self.s
     }
-    /// 返回局部坐标下的文字宽度。
     pub fn text(&self, x: f32, base: f32, t: &str, size: f32, w: W, color: Color32, h: H) -> f32 {
         let g = self.galley(t, size, w, color);
         let gw = g.size().x;
@@ -111,7 +103,6 @@ impl<'a> Card<'a> {
         self.painter.galley(p, g, color);
         gw / self.s
     }
-    /// 以字形的实际可见范围对齐垂直中心，保持中英文状态文字居中。
     pub fn centered_text(&self, x: f32, cy: f32, t: &str, size: f32, w: W, color: Color32, h: H) {
         if t.is_empty() {
             return;
@@ -125,7 +116,6 @@ impl<'a> Card<'a> {
         let pos = self.pos(x, cy) - Vec2::new(dx, g.mesh_bounds.center().y);
         self.painter.galley(pos, g, color);
     }
-    /// 超宽时末尾加省略号。
     pub fn fit(&self, t: &str, size: f32, w: W, max_w: f32) -> String {
         if self.text_w(t, size, w) <= max_w {
             return t.to_owned();
@@ -133,7 +123,7 @@ impl<'a> Card<'a> {
         let chars: Vec<char> = t.chars().collect();
         let (mut low, mut high) = (0, chars.len().saturating_sub(1));
         while low < high {
-            let n = low + (high - low + 1) / 2;
+            let n = low + (high - low).div_ceil(2);
             let s: String = chars[..n].iter().collect::<String>() + "…";
             if self.text_w(&s, size, w) <= max_w {
                 low = n;
@@ -144,7 +134,6 @@ impl<'a> Card<'a> {
         chars[..low].iter().collect::<String>() + "…"
     }
 
-    /// 按宽度折行，最多 `max_lines` 行，还有剩余内容时最后一行加省略号。
     pub fn wrap(&self, t: &str, size: f32, w: W, max_w: f32, max_lines: usize) -> Vec<String> {
         let mut out: Vec<String> = Vec::new();
         let mut cur = String::new();
@@ -180,7 +169,6 @@ impl<'a> Card<'a> {
         out
     }
 
-    // ---------- 图形 ----------
     pub fn fill(&self, x: f32, y: f32, w: f32, h: f32, r: f32, color: Color32) {
         self.painter
             .rect_filled(self.rect(x, y, w, h), r * self.s, color);
@@ -220,7 +208,6 @@ impl<'a> Card<'a> {
         self.painter
             .add(egui::Shape::convex_polygon(v, color, Stroke::NONE));
     }
-    /// 圆弧描边（角度单位弧度，0 = 正右，顺时针为正）。
     pub fn arc(&self, cx: f32, cy: f32, r: f32, a0: f32, a1: f32, width: f32, color: Color32) {
         let n = (((a1 - a0).abs() / TAU) * 96.0).ceil().max(2.0) as usize;
         let pts: Vec<(f32, f32)> = (0..=n)
@@ -231,7 +218,6 @@ impl<'a> Card<'a> {
             .collect();
         self.path(&pts, width, color);
     }
-    /// 径向柔光（中心 color → 边缘透明）。
     pub fn glow(&self, cx: f32, cy: f32, r: f32, color: Color32) {
         let mut mesh = egui::Mesh::default();
         let c = self.pos(cx, cy);
@@ -239,7 +225,6 @@ impl<'a> Card<'a> {
         let n = 48;
         for i in 0..=n {
             let a = i as f32 / n as f32 * TAU;
-            // 中间加一圈 45% 处的半透明，近似高斯衰减
             mesh.colored_vertex(
                 c + Vec2::angled(a) * r * 0.45 * self.s,
                 color.gamma_multiply(0.45),
@@ -254,7 +239,6 @@ impl<'a> Card<'a> {
         }
         self.painter.add(egui::Shape::mesh(mesh));
     }
-    /// 圆角竖直渐变，沿用 egui 的边缘抗锯齿。
     pub fn vgrad(
         &self,
         x: f32,
@@ -284,7 +268,6 @@ impl<'a> Card<'a> {
             }
         }
     }
-    /// 虚线圆角框；`phase` 让虚线沿边「流动」。
     pub fn dashed(
         &self,
         x: f32,
@@ -321,7 +304,6 @@ impl<'a> Card<'a> {
         self.painter.extend(shapes);
     }
 
-    // ---------- 交互 ----------
     pub fn hit(&self, x: f32, y: f32, w: f32, h: f32, id: impl std::hash::Hash) -> Response {
         let rect = self.rect(x, y, w, h).intersect(self.painter.clip_rect());
         let sense = if self.live {
@@ -345,7 +327,6 @@ impl<'a> Card<'a> {
             },
         )
     }
-    /// 悬停 / 按下的平滑过渡量（0..1）。
     pub fn hover_t(&self, r: &Response) -> (f32, f32) {
         let ctx = self.ui.ctx();
         let h = ctx.animate_bool_with_time(r.id.with("h"), self.live && r.hovered(), 0.14);
@@ -466,7 +447,7 @@ mod gradient_tests {
             .collect();
         let covers = |point: Pos2| {
             meshes.iter().any(|m| {
-                m.indices.chunks_exact(3).any(|tri| {
+                m.indices.as_chunks::<3>().0.iter().any(|tri| {
                     let [a, b, c] = [
                         m.vertices[tri[0] as usize].pos,
                         m.vertices[tri[1] as usize].pos,
@@ -487,7 +468,7 @@ mod gradient_tests {
     }
 }
 
-/// 胶囊按钮：悬停提亮、按下轻微缩小，返回 (响应, 内容画布)。
+#[allow(clippy::too_many_arguments)]
 pub fn capsule<'a>(
     c: &Card<'a>,
     x: f32,
@@ -506,9 +487,6 @@ pub fn capsule<'a>(
     (r, inner)
 }
 
-// ======================= 图标 =======================
-
-/// 电池环：充电绿色 + 闪电；低电量红色；否则灰色并显示百分比弧。
 pub fn battery(c: &Card, cx: f32, cy: f32, pct: Option<u8>, charging: bool, k: f32) {
     let r = 8.2 * k;
     let w = 2.6 * k;
@@ -558,12 +536,10 @@ pub fn battery(c: &Card, cx: f32, cy: f32, pct: Option<u8>, charging: bool, k: f
     }
 }
 
-/// 播放 ↔ 暂停形变：`t` = 0 播放三角，1 暂停双竖条。
 pub fn play_pause(c: &Card, cx: f32, cy: f32, size: f32, t: f32, color: Color32) {
     let (w, h) = (size * 0.86, size);
     let bw = w * 0.34;
     let l = |a: (f32, f32), b: (f32, f32)| (cx + a.0 + (b.0 - a.0) * t, cy + a.1 + (b.1 - a.1) * t);
-    // 三角拆成左梯形 + 右三角，与两根竖条一一对应插值
     let dx = w * 0.08 * (1.0 - t); // 三角视觉重心右移
     let left = [
         l((-w / 2.0 + dx, -h / 2.0), (-w / 2.0, -h / 2.0)),
@@ -633,7 +609,6 @@ pub fn bell(c: &Card, x: f32, y: f32, color: Color32, angle: f32) {
     c.circle(clapper.0, clapper.1, 1.2, color);
 }
 
-/// 勾：`t` 0..1 逐笔画出。
 pub fn check(c: &Card, cx: f32, cy: f32, s: f32, t: f32, width: f32, color: Color32) {
     let a = (cx - s * 0.45, cy + s * 0.02);
     let b = (cx - s * 0.12, cy + s * 0.34);
@@ -652,7 +627,6 @@ pub fn check(c: &Card, cx: f32, cy: f32, s: f32, t: f32, width: f32, color: Colo
     }
 }
 
-// ---------- 文件图标（取不到系统图标时的矢量版） ----------
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FileKind {
     Folder,
@@ -723,7 +697,6 @@ pub fn file_glyph(c: &Card, kind: FileKind, cx: f32, cy: f32, size: f32) {
         );
         return;
     }
-    // 纸张 + 折角
     let (w, h) = (26.0 * s, 33.0 * s);
     let (x0, y0) = (cx - w / 2.0, cy - h / 2.0);
     let fold = 7.5 * s;
@@ -867,7 +840,6 @@ pub fn file_glyph(c: &Card, kind: FileKind, cx: f32, cy: f32, size: f32) {
 
 const YELLOW_SOFT: Color32 = Color32::from_rgb(255, 214, 92);
 
-// 时段文字弱化，数字保持原有字号与字重。
 pub fn clock_width(c: &Card, text: &str, size: f32) -> f32 {
     match text.split_once(' ') {
         Some((period, digits)) => {
@@ -907,21 +879,6 @@ const CHASE_ROWS: [f32; 23] = [
     1.5, 2.4, 3.4, 4.6, 6.2, 8.2, 11.0, 16.0,
 ];
 
-/// 进度条追光：**一片**解析式彗尾，不是「光带 + 亮珠 + 几层光晕」的叠罗汉。
-///
-/// 每个顶点直接采样五个连续函数并就地做 source-over 合成：
-/// 1. `glow`：沿光带铺开的宽高斯外晕，把光"洇"到轨道上下；
-/// 2. `under`：已播放段的底色光，横贯整段、很淡；
-/// 3. `band`：贴着中轴的细光带，**在头部收窄**，尾巴那头再张开；
-/// 4. `core`：播放头附近的中等亮核；
-/// 5. `needle`：压在播放头正上方的一颗极小的近白高光——头部之所以"尖"全靠它。
-/// 五者共用同一条横向拖尾曲线，所以从头到尾是一次连续过渡，
-/// 没有矩形拼接、没有台阶色带、没有可见的圆环接缝。
-///
-/// 光**朝后**：亮核在 `head`，尾巴一路向左按 `exp(-(d/tail)^1.35)` 衰减，
-/// 头前只有约 3 DIP 的收边（两头一阶导都为 0，接得上，不会顿一下）。
-///
-/// `hot`：暂停 0.45 / 播放 0.62 / 按住拖动 1.0，只影响亮度与尾巴长度。
 pub fn chase(c: &Card, x0: f32, head: f32, y: f32, thick: f32, tint: Color32, hot: f32) {
     let th = thick.max(1.0);
     let hot = hot.clamp(0.0, 1.0);
@@ -929,7 +886,6 @@ pub fn chase(c: &Card, x0: f32, head: f32, y: f32, thick: f32, tint: Color32, ho
     if span < 0.5 {
         return;
     }
-    // 拖尾特征长度：播放约 46 DIP，拖动时拉长到 56 DIP（越用力尾巴越长）。
     let tail = 30.0 + 26.0 * hot;
     let sy = th * 0.46; // 细光带半高
     let by = th * 1.15 + 1.4 * hot; // 外晕半径（贴着轨道，不要糊成一片雾）
@@ -940,9 +896,7 @@ pub fn chase(c: &Card, x0: f32, head: f32, y: f32, thick: f32, tint: Color32, ho
     let ramp = 6.0; // 轨道左端收边（够宽才不会在起点切出一条垂直硬边）
     let lead = 6.0f32; // 头部前方收边（越宽过渡越软）
 
-    // 按屏幕像素宽度过滤细光带，移动时亮度不会集中到单行像素。
-    let pixel =
-        1.0 / (c.s * c.ui.ctx().pixels_per_point() * eframe::root_frame_paint_scale()).max(0.1);
+    let pixel = 1.0 / (c.s * c.ui.ctx().pixels_per_point()).max(0.1);
     let filter_variance = pixel * pixel / 6.0;
     let filtered = |offset: f32, width: f32| {
         let variance = width * width + filter_variance;
@@ -961,8 +915,6 @@ pub fn chase(c: &Card, x0: f32, head: f32, y: f32, thick: f32, tint: Color32, ho
     let c_core = mix(tint, Color32::WHITE, 0.90);
     let c_needle = mix(tint, Color32::WHITE, 0.97);
 
-    // 列：尾巴 1 DIP 一列（平滑曲线够用），头部 6 DIP 单独加密到 0.6 DIP，
-    // 并且**保证有一列正好落在 head 上**——尖点不被插值削平，头才立得住。
     let n_back = (span / 1.0).ceil().max(2.0) as usize;
     let n_fwd = (lead / 0.6).ceil().max(2.0) as usize;
     let mut xs = Vec::with_capacity(n_back + n_fwd + 1);
@@ -979,22 +931,17 @@ pub fn chase(c: &Card, x0: f32, head: f32, y: f32, thick: f32, tint: Color32, ho
     for off in CHASE_ROWS {
         for &x in &xs {
             let d = head - x; // >0 在头后（左），<0 在头前
-                              // 横向：向后指数拖尾，向前 6 DIP 内平滑收边
             let back = (-(d.max(0.0) / tail).powf(1.35)).exp();
-            // 前端收边随 |off| 提前：越靠上下越早收，前端自然成一个尖角，
-            // 而不是一条垂直切平的钝口。
             let d_front = d - off.abs(); // 收角 45°：每往后 1 DIP，半宽张 1 DIP
             let fwd = if d_front >= 0.0 {
                 1.0
             } else {
                 let q = (-d_front / lead).min(1.0);
-                // 两端导数为 0 的平滑收边（smoothstep 的补），斜坡均匀，不会出现台阶
                 (1.0 - q).powi(2) * (1.0 + 2.0 * q)
             };
             let s = ((x - x0) / ramp).clamp(0.0, 1.0);
             let start = s * s * (3.0 - 2.0 * s);
             let prof = back * fwd * start;
-            // 纵向：所有层都在头部收敛成一点（锥形收尖），往尾巴那头再张开
             let t_along = (d.max(0.0) / tail).min(1.0);
             let taper = 0.48 + 0.52 * t_along;
             let taper_glow = 0.40 + 0.60 * t_along;
@@ -1004,8 +951,6 @@ pub fn chase(c: &Card, x0: f32, head: f32, y: f32, thick: f32, tint: Color32, ho
                 + (off / (cy * (0.5 + 0.5 * t_along))).powi(2))
                 * 1.4)
                 .exp();
-            // 尖端：很扁很亮的一道，自己按高斯在头前几 DIP 内收掉，不被 6 DIP 的
-            // 前收边切齐——否则会看见一条垂直的刀口
             let needle = (-(d / nx).powi(2) * 1.2).exp() * filtered(off, ny / 1.2_f32.sqrt());
 
             let mut acc = [0.0f32; 3];
@@ -1021,8 +966,6 @@ pub fn chase(c: &Card, x0: f32, head: f32, y: f32, thick: f32, tint: Color32, ho
                 inv *= 1.0 - sa;
             };
             put(c_glow, a_glow * prof * glow);
-            // 已播放段的底光不跟着尾巴衰减：整段都要看得见「已播放」，
-            // 只是越靠近头部越亮——衰减交给上面那几层彗尾。
             put(c_under, a_under * fwd * start * band);
             put(c_band, a_band * prof * band);
             put(c_core, a_core * core * fwd);

@@ -1,3 +1,8 @@
+//! Local clipboard history protection and persistence.
+//!
+//! Persisted text is encrypted with current-user DPAPI. Sensitive-looking
+//! content is filtered before it reaches the history store.
+
 use std::collections::hash_map::DefaultHasher;
 use std::fs;
 use std::hash::{Hash, Hasher};
@@ -501,18 +506,12 @@ pub fn start_monitor(app: AppHandle, history: ClipboardHistory) {
                 continue;
             }
 
-            match read_clipboard_text() {
-                Ok(text) => {
-                    sequence = next_sequence;
-                    if let Some(text) = text {
-                        if history.record_text(&text) {
-                            notify(&app);
-                        }
+            if let Ok(text) = read_clipboard_text() {
+                sequence = next_sequence;
+                if let Some(text) = text {
+                    if history.record_text(&text) {
+                        notify(&app);
                     }
-                }
-                Err(()) => {
-                    // Another application can briefly own the clipboard.
-                    // Retry on the next poll without advancing the sequence.
                 }
             }
         }

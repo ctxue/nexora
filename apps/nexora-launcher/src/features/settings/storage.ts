@@ -10,14 +10,10 @@ import {
 } from "./defaults";
 import type { Settings } from "./types";
 
-/** localStorage key holding the whole configuration. */
 export const SETTINGS_KEY = "nexora.settings.v1";
 
-/** One-time marker for the 0.2.1 default-shadow change (70% -> 100%). */
 const SHADOW_DEFAULT_MIGRATION_KEY = "nexora.settings.shadow-default.v1";
-/** One-time marker that pauses clipboard capture after privacy hardening. */
 const CLIPBOARD_PRIVACY_MIGRATION_KEY = "nexora.clipboard.privacy-pause.v1";
-/** One-time marker for the compact launcher default. */
 const COMPACT_DEFAULT_MIGRATION_KEY = "nexora.settings.compact-default.v1";
 
 export function clampRadius(value: unknown): number {
@@ -41,7 +37,6 @@ export function clampFontSize(value: unknown): number {
   return Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, Math.round(value)));
 }
 
-/** Coerces arbitrary data (stored or imported) into a complete settings object. */
 export function normalizeSettings(parsed: unknown): Settings {
   if (!parsed || typeof parsed !== "object") return DEFAULT_SETTINGS;
   const candidate = parsed as Partial<Settings>;
@@ -93,7 +88,6 @@ export function normalizeSettings(parsed: unknown): Settings {
   };
 }
 
-/** Parses the value stored in localStorage, falling back to defaults. */
 export function parseSettings(raw: string): Settings {
   try {
     return normalizeSettings(JSON.parse(raw));
@@ -108,9 +102,6 @@ export function loadSettings(): Settings {
     const settings = raw ? parseSettings(raw) : { ...DEFAULT_SETTINGS };
     let changed = false;
 
-    // 0.2.1 raised the shipped shadow default from 70% to 100%. Older installs
-    // stored 70% even when the user never touched the slider, so migrate that
-    // value once; a deliberate 70% set afterwards is left alone.
     if (window.localStorage.getItem(SHADOW_DEFAULT_MIGRATION_KEY) !== "1") {
       window.localStorage.setItem(SHADOW_DEFAULT_MIGRATION_KEY, "1");
       if (settings.shadow === 70) {
@@ -145,6 +136,5 @@ export function saveSettings(settings: Settings) {
   try {
     window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   } catch {
-    // Settings are a convenience; storage failure should not break the app.
   }
 }

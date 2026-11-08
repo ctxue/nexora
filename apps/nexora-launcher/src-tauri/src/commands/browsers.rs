@@ -1,9 +1,3 @@
-//! Installed browsers and URL launching.
-//!
-//! Browsers are discovered from the `StartMenuInternet` registry keys, which is
-//! where installers register themselves (a Program Files scan would miss
-//! portable and per-user installs just as badly).
-
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
@@ -17,7 +11,6 @@ pub struct BrowserInfo {
     pub exe: String,
 }
 
-/// Extracts the executable path from a registry `shell\open\command` value.
 fn command_executable(command: &str) -> Option<String> {
     let command = command.trim();
     let exe = if let Some(rest) = command.strip_prefix('"') {
@@ -52,7 +45,6 @@ fn push_unique(browsers: &mut Vec<BrowserInfo>, exe: &str, name: &str, id: &str)
     });
 }
 
-/// Every browser registered for the current user or the machine.
 pub fn browsers() -> Vec<BrowserInfo> {
     let mut found = Vec::new();
 
@@ -96,7 +88,6 @@ pub fn browsers() -> Vec<BrowserInfo> {
         }
     }
 
-    // Registry keys are authoritative; these paths only cover damaged installs.
     for (name, path) in [
         (
             "Microsoft Edge",
@@ -131,7 +122,6 @@ fn is_web_url(url: &str) -> bool {
     lower.starts_with("http://") || lower.starts_with("https://")
 }
 
-/// Opens `url` in the default browser, or in `browser` when one is given.
 #[tauri::command]
 pub fn open_url(url: String, browser: Option<String>, new_window: bool) -> Result<(), String> {
     let url = url.trim().to_string();

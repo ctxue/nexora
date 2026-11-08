@@ -232,7 +232,6 @@ function evaluateConversion(source: string): SmartResult | null {
   const to = LINEAR_UNITS[toKey];
   if (!from || !to) return null;
 
-  // Only convert within compatible dimensions.
   const length = new Set(["m", "km", "cm", "mm", "mi", "ft", "in"]);
   const mass = new Set(["kg", "g", "lb", "oz"]);
   const volume = new Set(["l", "ml"]);
@@ -283,7 +282,6 @@ function evaluateTime(source: string): SmartResult | null {
   };
 }
 
-/** Returns a result only for input that is unambiguously a calculator/unit query. */
 export function evaluateSmartQuery(source: string): SmartResult | null {
   const trimmed = source.trim();
   if (!trimmed) return null;

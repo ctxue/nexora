@@ -1,4 +1,3 @@
-//! Fetch only text/HTML MIME parts, avoiding attachment downloads.
 use super::{body_of, code_of, links_of, parse_message, Account, Item, Parsed};
 use imap_proto::{BodyStructure, MessageSection, SectionPath};
 use std::io::{Read, Write};
@@ -59,14 +58,10 @@ fn make_item(parsed: Parsed, fetch: &imap::types::Fetch, account: &Account) -> I
     }
 }
 
-/// 服务器明确拒绝了这条命令（NO / BAD）：连接仍然同步，可以换一种方式读这封信。
-/// 其他错误（超时、解析失败、连接中断）说明响应没读完，这条连接已经不能再用，
-/// 必须交给上层断开重连；继续发命令会读到上一条命令残留的响应。
 fn rejected(error: &imap::Error) -> bool {
     matches!(error, imap::Error::No(_) | imap::Error::Bad(_))
 }
 
-// 部分旧服务器没有 BODYSTRUCTURE 或 MIME 分段支持，继续使用原有完整读取路径。
 fn legacy<S: Read + Write>(
     session: &mut imap::Session<S>,
     uid: u32,
@@ -227,7 +222,6 @@ mod tests {
     }
     #[test]
     fn out_of_sync_response_reports_an_error_instead_of_crashing() {
-        // 用户崩溃日志：vendor\imap\src\client.rs:1369 的标签断言。a2 的位置收到上一条命令迟到的 a1 结束行。
         let (mut session, output) = wire(
             "a1 OK late\r\n* 1 FETCH (UID 42 BODY[HEADER] {9}\r\nSubject:\n)\r\na2 OK fetch\r\n",
         );

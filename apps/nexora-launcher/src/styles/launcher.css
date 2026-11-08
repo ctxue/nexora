@@ -1,4 +1,3 @@
-/* Everything drawn inside the launcher window. */
 
 .launcher-card {
   position: relative;
@@ -10,8 +9,6 @@
   background: var(--surface);
   border: 0;
   border-radius: var(--launcher-radius);
-  /* Three stacked layers, all scaled by the shadow slider: a wide ambient
-     pool, a mid contact shadow, and a hairline right under the edge. */
   box-shadow:
     0 0 9px 0 var(--launcher-glass-glow),
     0 20px 46px -12px
@@ -89,7 +86,6 @@
   caret-color: var(--caret);
 }
 
-/* Command scope: a quiet Spotlight-style token in front of the argument. */
 .search-scope {
   display: inline-flex;
   align-items: center;
@@ -751,8 +747,6 @@
   display: flex;
   flex-direction: column;
   gap: calc(1px * var(--font-scale));
-  /* Seats the title line against the icon's top edge; centring the two-line
-     block made the title look higher than the icon. */
   padding-top: calc(2px * var(--font-scale));
   line-height: 1.2;
 }

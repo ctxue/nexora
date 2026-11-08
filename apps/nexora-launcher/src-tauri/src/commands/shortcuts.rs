@@ -1,5 +1,3 @@
-//! Global shortcut registration and the shortcut recorder.
-
 use tauri::{AppHandle, Manager};
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 

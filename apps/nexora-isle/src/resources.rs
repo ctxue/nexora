@@ -1,4 +1,3 @@
-//! 媒体后台任务的进程级上限，以及有容量限制的本机资源记录。
 use std::{
     path::{Path, PathBuf},
     sync::{
@@ -68,7 +67,6 @@ impl Drop for Lease {
 }
 
 pub static POLLER: Lane = Lane::new("nexora-isle-media", 1);
-// 允许旧实例正在退出与新实例短暂交接；阻塞任务跨缓存重建仍受此上限约束。
 pub static ARTWORK: Lane = Lane::new("nexora-isle-artwork", 2);
 pub static COVER: Lane = Lane::new("nexora-isle-cover", 2);
 pub static LYRICS: Lane = Lane::new("nexora-isle-lyrics", 1);
@@ -111,6 +109,12 @@ impl PendingRequests {
             .retain(|pending| now < pending.after || !(pending.ready)());
     }
 }
+
+impl Default for PendingRequests {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 pub static PENDING: PendingRequests = PendingRequests::new();
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -124,14 +128,11 @@ impl Snapshot {
     pub fn abnormal(&self) -> bool {
         self.private_bytes >= 512 * 1024 * 1024 || self.threads >= 128 || self.handles >= 4096
     }
-    /// 远超正常范围（正常约 20–40 线程、500–600 句柄、几百 MB）：继续运行会拖慢用户电脑。
     pub fn severe(&self) -> bool {
         self.private_bytes >= 1536 * 1024 * 1024 || self.threads >= 400 || self.handles >= 16384
     }
 }
 
-/// 资源保护：连续两次采样都严重超标时「熔断」，由界面暂停音乐读取与歌词等后台任务。
-/// 只能触发一次，重启NEXORA ISLE后恢复；单次尖峰不会触发。
 pub struct Guard {
     strikes: AtomicUsize,
     tripped: std::sync::atomic::AtomicBool,
@@ -143,7 +144,6 @@ impl Guard {
             tripped: std::sync::atomic::AtomicBool::new(false),
         }
     }
-    /// 返回 true 表示这次采样刚好触发熔断。
     pub fn observe(&self, value: &Snapshot) -> bool {
         if !value.severe() {
             self.strikes.store(0, Ordering::Relaxed);
@@ -154,6 +154,12 @@ impl Guard {
     }
     pub fn tripped(&self) -> bool {
         self.tripped.load(Ordering::Acquire)
+    }
+}
+
+impl Default for Guard {
+    fn default() -> Self {
+        Self::new()
     }
 }
 pub static GUARD: Guard = Guard::new();
@@ -244,7 +250,6 @@ fn append(directory: &Path, line: &str) -> std::io::Result<()> {
     append_rotating(directory, "resources", LOG_LIMIT, line)
 }
 
-/// 追加到 `<name>.log`，超过上限时整份滚动为 `<name>.previous.log`，两份合计不超过 2 倍上限。
 fn append_rotating(directory: &Path, name: &str, limit: u64, line: &str) -> std::io::Result<()> {
     use std::io::Write;
     if line.len() as u64 > limit {
@@ -269,7 +274,6 @@ fn append_rotating(directory: &Path, name: &str, limit: u64, line: &str) -> std:
         .write_all(line.as_bytes())
 }
 
-/// 功能诊断日志（如歌词查找过程）：每份最多 256KB，写入失败不影响功能。
 pub fn append_log(directory: &Path, file: &str, line: &str) {
     let name = file.strip_suffix(".log").unwrap_or(file);
     let mut line: String = line.trim_end().chars().take(2048).collect();
@@ -311,34 +315,30 @@ fn record(value: Snapshot) -> String {
     line
 }
 
-/// 持有期间每 30 秒采样；销毁后唤醒退出，不让界面等待后台线程。
 pub struct Monitor {
     _stop: std::sync::mpsc::Sender<()>,
 }
 impl Monitor {
     pub fn start(directory: PathBuf) -> Option<Self> {
         let (stop, rx) = std::sync::mpsc::channel();
-        MONITOR.spawn(move || {
-            loop {
-                // 正常时 30 秒采样一次；一旦异常改为 5 秒，尽早熔断，避免像线程每秒暴涨时那样拖到几十 GB。
-                let mut interval = Duration::from_secs(30);
-                if let Some(value) = snapshot() {
-                    let line = record(value);
-                    let _ = append(&directory, &line);
-                    if value.abnormal() {
-                        let _ = std::fs::write(directory.join("last-resource-anomaly.log"), &line);
-                        interval = Duration::from_secs(5);
-                    }
-                    if GUARD.observe(&value) {
-                        let _ = std::fs::write(
-                            directory.join("resource-guard.log"),
-                            format!("已自动暂停音乐信息、封面与歌词读取\n{line}"),
-                        );
-                    }
+        MONITOR.spawn(move || loop {
+            let mut interval = Duration::from_secs(30);
+            if let Some(value) = snapshot() {
+                let line = record(value);
+                let _ = append(&directory, &line);
+                if value.abnormal() {
+                    let _ = std::fs::write(directory.join("last-resource-anomaly.log"), &line);
+                    interval = Duration::from_secs(5);
                 }
-                if rx.recv_timeout(interval) != Err(std::sync::mpsc::RecvTimeoutError::Timeout) {
-                    break;
+                if GUARD.observe(&value) {
+                    let _ = std::fs::write(
+                        directory.join("resource-guard.log"),
+                        format!("已自动暂停音乐信息、封面与歌词读取\n{line}"),
+                    );
                 }
+            }
+            if rx.recv_timeout(interval) != Err(std::sync::mpsc::RecvTimeoutError::Timeout) {
+                break;
             }
         })?;
         Some(Self { _stop: stop })
@@ -479,8 +479,6 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn sampling_does_not_leak_snapshot_handles() {
-        // 句柄数是整个测试进程的，并行的其他测试也会开关线程和连接；取三轮中增长最小的一轮判断。
-        // 真正的泄漏每次采样至少多一个句柄，100 次采样会多出上百个，三轮都会超标。
         let growth = (0..3)
             .map(|_| {
                 let before = snapshot().unwrap();

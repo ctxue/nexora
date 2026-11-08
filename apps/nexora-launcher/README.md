@@ -8,7 +8,7 @@
 
 启动器搜索应用、文件与命令，结果按类别分组；命令模式可以用「关键词 + Tab」把输入变成一个作用域标签；设置窗口覆盖外观、内置功能、命令、应用、插件与配置备份。
 
-> 截图取自 v0.3.0 开发版，实际界面以当前构建为准。
+> 截图取自当前 0.3.1 版本，实际界面以当前构建为准。
 
 <table>
   <tr>
@@ -122,7 +122,7 @@ pnpm debug:launcher
 pnpm test:launcher       # 前端、Rust 和发布工作流测试
 pnpm debug:launcher      # 生成可直接运行的 debug 可执行文件
 pnpm package:launcher    # 只打包 NEXORA
-pnpm package:all         # 同时打包 NEXORA 和 NEXORA ISLE · 星屿
+pnpm package:all         # 同时打包 NEXORA 和 NEXORA ISLE · 岛屿
 pnpm clean               # 清理生成物，保留依赖
 pnpm clean:all           # 连依赖缓存一起清理
 ```
@@ -187,7 +187,6 @@ NEXORA_LAUNCHER_<版本>_portable.zip
 | `SettingsWindow.tsx` | 设置窗口外壳：快捷键录制、开机启动、重置等原生交互 |
 | `i18n.tsx` | 中英文案与 `useI18n` |
 | `components/SearchBar.tsx` | 搜索栏（拖拽区、命令标签、清空按钮、快捷键提示） |
-| `components/SearchCaret.tsx` | 自绘光标位置计算 |
 | `components/ResultList.tsx` | 搜索结果分组列表 |
 | `components/RecentList.tsx` | 最近使用列表 |
 | `components/QuickActions.tsx` | 首次使用时的快捷操作 |
@@ -290,6 +289,7 @@ NEXORA_LAUNCHER_<版本>_portable.zip
 
 ## 开发约定
 
+- 注释只说明产品边界、状态不变量、安全约束和 Windows 特殊行为；不记录重构过程或逐行复述代码。
 - **新增一项设置**：`features/settings/types.ts` 加字段 → `defaults.ts` 给默认值 → `storage.ts` 加校验 → 在 `SettingsPanel.tsx` 里放控件。
 - **新增一个设置页**：`components/settings/sections.ts` 加 `SectionId` 与图标 → 在 `SettingsPanel.tsx` 内渲染对应组件。
 - **新增一个原生能力**：在 `commands/<域>.rs` 写 `#[tauri::command]` → `commands/mod.rs` 导出 → `app.rs` 的 `generate_handler!` 注册 → `platform/tauri.ts` 包一层类型化方法。
