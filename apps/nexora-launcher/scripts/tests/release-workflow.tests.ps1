@@ -207,6 +207,20 @@ Test-Case "release packaging uses canonical product names and exactly two files"
   }
 }
 
+Test-Case "CI relies on the workspace packageManager without pinning pnpm twice" {
+  $workspaceRoot = Split-Path -Parent (Split-Path -Parent $repoRoot)
+  $rootPackage = Get-Content -Raw -LiteralPath (Join-Path $workspaceRoot "package.json") | ConvertFrom-Json
+  Assert-True ($rootPackage.packageManager -match '^pnpm@\d+\.\d+\.\d+$') "root packageManager must pin one pnpm version"
+
+  $workflowFiles = Get-ChildItem -LiteralPath (Join-Path $workspaceRoot ".github\workflows") -Filter *.yml -File
+  foreach ($workflow in $workflowFiles) {
+    $content = Get-Content -Raw -LiteralPath $workflow.FullName
+    if ($content -match 'uses:\s*pnpm/action-setup@') {
+      Assert-True ($content -notmatch '(?m)^\s+version:\s*11\s*$') "$($workflow.Name) pins a second pnpm version"
+    }
+  }
+}
+
 if ($failures -gt 0) {
   Write-Error "$failures of $tests workflow tests failed"
   exit 1
