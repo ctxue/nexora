@@ -213,7 +213,12 @@ Test-Case "CI relies on the project packageManager without pinning pnpm twice" {
   $rootPackage = Get-Content -Raw -LiteralPath (Join-Path $repoRoot "package.json") | ConvertFrom-Json
   Assert-True ($rootPackage.packageManager -match '^pnpm@\d+\.\d+\.\d+$') "root packageManager must pin one pnpm version"
 
-  $workflowFiles = Get-ChildItem -LiteralPath (Join-Path $repoRoot ".github\workflows") -Filter *.yml -File
+  $workflowDirectory = Join-Path $repoRoot ".github\workflows"
+  if (-not (Test-Path -LiteralPath $workflowDirectory)) {
+    $workspaceRoot = Split-Path -Parent (Split-Path -Parent $repoRoot)
+    $workflowDirectory = Join-Path $workspaceRoot ".github\workflows"
+  }
+  $workflowFiles = Get-ChildItem -LiteralPath $workflowDirectory -Filter *.yml -File
   foreach ($workflow in $workflowFiles) {
     $content = Get-Content -Raw -LiteralPath $workflow.FullName
     if ($content -match 'uses:\s*pnpm/action-setup@') {
