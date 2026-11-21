@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { ChevronRight, Folder, HardDrive, X } from "lucide-react";
 import {
   startTransition,
   useCallback,
@@ -9,15 +9,19 @@ import {
 } from "react";
 
 import type { CommandIcon } from "../core/types";
+import { parseSearchQuery } from "../core/query";
+import { hasReachedDragThreshold } from "../features/launcher/drag";
+import { searchPlaceholderFor } from "../features/launcher/searchPlaceholder";
 import { shouldSyncSearchInput } from "../features/launcher/searchInput";
 import { useI18n } from "../i18n";
-import { BrandMark } from "./BrandMark";
 import { CommandGlyphIcon } from "./CommandGlyph";
+import { Badge } from "./ui/badge";
 
 interface SearchBarProps {
   value: string;
-  shortcut: string;
   inputRef: RefObject<HTMLInputElement | null>;
+  showPlaceholder: boolean;
+  placeholderText: string;
   onChange: (value: string) => void;
   onClear: () => void;
   onDragStart: () => void;
@@ -28,8 +32,9 @@ interface SearchBarProps {
 
 export function SearchBar({
   value,
-  shortcut,
   inputRef,
+  showPlaceholder,
+  placeholderText,
   onChange,
   onClear,
   onDragStart,
@@ -41,8 +46,29 @@ export function SearchBar({
   const [hasDraft, setHasDraft] = useState(Boolean(value));
   const draft = useRef(value);
   const composing = useRef(false);
+  const dragOrigin = useRef<{
+    pointerId: number;
+    x: number;
+    y: number;
+  } | null>(null);
   const scopeKey = scope?.keyword ?? null;
   const previousScopeKey = useRef(scopeKey);
+  const placeholderCopy = searchPlaceholderFor({
+    enabled: showPlaceholder,
+    custom: placeholderText,
+    fallback: t("search.placeholder"),
+    scoped: scope
+      ? t("search.scopedPlaceholder", { name: scope.title })
+      : null,
+  });
+  const pathRoot = parseSearchQuery(value).pathRoot;
+  const pathCrumbs = pathRoot
+    ? pathRoot
+        .replace(/\\+$/u, "")
+        .split("\\")
+        .filter(Boolean)
+        .map((crumb, index) => (index === 0 ? crumb.toUpperCase() : crumb))
+    : [];
 
   const resetCaret = useCallback(() => {
     window.requestAnimationFrame(() => {
@@ -82,35 +108,42 @@ export function SearchBar({
   }, [inputRef]);
 
   return (
-    <div
-      className="search-bar"
-      data-tauri-drag-region
-      onMouseDown={(event) => {
+    <div className="search-header">
+      <div
+        className="search-bar"
+      onPointerDown={(event) => {
         if (event.button !== 0) return;
-        const target = event.target as HTMLElement;
-        if (target.closest("input, button")) return;
+        dragOrigin.current = {
+          pointerId: event.pointerId,
+          x: event.clientX,
+          y: event.clientY,
+        };
+      }}
+      onPointerMove={(event) => {
+        const origin = dragOrigin.current;
+        if (!origin || origin.pointerId !== event.pointerId) return;
+        if (
+          !hasReachedDragThreshold(
+            event.clientX - origin.x,
+            event.clientY - origin.y,
+          )
+        ) {
+          return;
+        }
+        dragOrigin.current = null;
         event.preventDefault();
         onDragStart();
       }}
-    >
-      <span
-        className="brand-mark"
-        data-tauri-drag-region
-        aria-hidden="true"
-        onPointerDown={(event) => {
-          event.stopPropagation();
-          if (event.button !== 0) return;
-          event.preventDefault();
-          onDragStart();
-        }}
-        onMouseDown={(event) => event.stopPropagation()}
+      onPointerUp={() => {
+        dragOrigin.current = null;
+      }}
+      onPointerCancel={() => {
+        dragOrigin.current = null;
+      }}
       >
-        <BrandMark />
-      </span>
-
       {scope ? (
-        <button
-          type="button"
+        <Badge
+          variant="secondary"
           className="search-scope"
           title={t("search.clearScope")}
           aria-label={`${t("search.removeScope")}: ${scope.title}`}
@@ -122,7 +155,7 @@ export function SearchBar({
         >
           <CommandGlyphIcon icon={scope.icon} size={13} strokeWidth={1.9} />
           <span className="search-scope-label">{scope.title}</span>
-        </button>
+        </Badge>
       ) : null}
 
       <input
@@ -162,16 +195,8 @@ export function SearchBar({
             resetCaret();
           }
         }}
-        placeholder={
-          scope
-            ? t("search.scopedPlaceholder", { name: scope.title })
-            : t("search.placeholder")
-        }
-        aria-label={
-          scope
-            ? t("search.scopedPlaceholder", { name: scope.title })
-            : t("search.placeholder")
-        }
+        placeholder={placeholderCopy.placeholder}
+        aria-label={placeholderCopy.label}
         autoComplete="off"
         autoCorrect="off"
         spellCheck={false}
@@ -192,12 +217,28 @@ export function SearchBar({
           <X size={14} strokeWidth={2} />
         </button>
       ) : null}
-
-      <span className="shortcut-hint" aria-label={shortcut}>
-        {shortcut.split("+").map((part, index) => (
-          <kbd key={`${part}-${index}`}>{part}</kbd>
-        ))}
-      </span>
+      </div>
+      {pathCrumbs.length > 0 ? (
+        <div className="path-breadcrumb" aria-label="Current path">
+          {pathCrumbs.map((crumb, index) => (
+            <span className="path-crumb" key={`${crumb}-${index}`}>
+              {index > 0 ? (
+                <ChevronRight
+                  className="path-chevron"
+                  size={10}
+                  strokeWidth={1.8}
+                />
+              ) : null}
+              {index === 0 ? (
+                <HardDrive size={11} strokeWidth={1.8} />
+              ) : (
+                <Folder size={11} strokeWidth={1.8} />
+              )}
+              <span>{crumb}</span>
+            </span>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

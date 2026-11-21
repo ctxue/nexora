@@ -22,6 +22,7 @@ function New-ProjectFixture {
   $root = Join-Path ([System.IO.Path]::GetTempPath()) ("nexora-workflow-" + [guid]::NewGuid().ToString("N"))
   $paths = @(
     "dist",
+    "browser-extension",
     "logs",
     "release",
     "node_modules\fixture",
@@ -35,6 +36,7 @@ function New-ProjectFixture {
   }
 
   Set-Content -LiteralPath (Join-Path $root "dist\index.html") -Value "dist"
+  Set-Content -LiteralPath (Join-Path $root "browser-extension\manifest.json") -Value "{}"
   Set-Content -LiteralPath (Join-Path $root "logs\old.log") -Value "old"
   Set-Content -LiteralPath (Join-Path $root "release\installer.exe") -Value "release"
   Set-Content -LiteralPath (Join-Path $root "node_modules\fixture\index.js") -Value "dependency"
@@ -201,18 +203,17 @@ Test-Case "release packaging uses canonical product names and exactly two files"
     Assert-True ($files.Count -eq 2) "expected exactly two release files, got $($files.Count)"
     Assert-True (Test-Path -LiteralPath (Join-Path $fixture "release\NEXORA_LAUNCHER_1.2.3_x64_setup.exe")) "installer was not staged"
     Assert-True (Test-Path -LiteralPath (Join-Path $fixture "release\NEXORA_LAUNCHER_1.2.3_portable.zip")) "portable archive was not created"
-    Assert-True (-not (Test-Path -LiteralPath (Join-Path $fixture "release\SHA256SUMS.txt"))) "checksum file would violate the four-file release contract"
+    Assert-True (-not (Test-Path -LiteralPath (Join-Path $fixture "release\SHA256SUMS.txt"))) "checksum file would violate the two-file launcher release contract"
   } finally {
     Remove-Item -LiteralPath $fixture -Recurse -Force -ErrorAction SilentlyContinue
   }
 }
 
-Test-Case "CI relies on the workspace packageManager without pinning pnpm twice" {
-  $workspaceRoot = Split-Path -Parent (Split-Path -Parent $repoRoot)
-  $rootPackage = Get-Content -Raw -LiteralPath (Join-Path $workspaceRoot "package.json") | ConvertFrom-Json
+Test-Case "CI relies on the project packageManager without pinning pnpm twice" {
+  $rootPackage = Get-Content -Raw -LiteralPath (Join-Path $repoRoot "package.json") | ConvertFrom-Json
   Assert-True ($rootPackage.packageManager -match '^pnpm@\d+\.\d+\.\d+$') "root packageManager must pin one pnpm version"
 
-  $workflowFiles = Get-ChildItem -LiteralPath (Join-Path $workspaceRoot ".github\workflows") -Filter *.yml -File
+  $workflowFiles = Get-ChildItem -LiteralPath (Join-Path $repoRoot ".github\workflows") -Filter *.yml -File
   foreach ($workflow in $workflowFiles) {
     $content = Get-Content -Raw -LiteralPath $workflow.FullName
     if ($content -match 'uses:\s*pnpm/action-setup@') {

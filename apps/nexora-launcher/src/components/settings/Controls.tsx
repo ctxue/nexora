@@ -36,13 +36,13 @@ export function ShortcutKeys({ shortcut }: { shortcut: string }) {
   );
 }
 
-export interface SegmentOption<T extends string> {
+export interface SegmentOption<T extends string | number> {
   value: T;
   label: string;
   icon?: ReactNode;
 }
 
-export function Segmented<T extends string>({
+export function Segmented<T extends string | number>({
   options,
   value,
   onChange,

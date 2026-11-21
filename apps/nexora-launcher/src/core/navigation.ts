@@ -1,7 +1,7 @@
 import type { LauncherItem } from "./types";
 
 function isPreviewable(item: LauncherItem | undefined): boolean {
-  return Boolean(item?.kind === "file" && item.path);
+  return Boolean(item?.kind === "file" && item.path && !item.isDirectory);
 }
 
 export function findPreviewIndex(

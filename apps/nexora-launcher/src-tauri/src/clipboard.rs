@@ -239,7 +239,7 @@ impl ClipboardHistory {
         self.capture_enabled.store(enabled, Ordering::Relaxed);
     }
 
-    fn capture_enabled(&self) -> bool {
+    pub(crate) fn capture_enabled(&self) -> bool {
         self.capture_enabled.load(Ordering::Relaxed)
     }
 
@@ -254,7 +254,7 @@ impl ClipboardHistory {
     }
 }
 
-fn dpapi_protect(plaintext: &[u8]) -> Result<Vec<u8>, String> {
+pub(crate) fn dpapi_protect(plaintext: &[u8]) -> Result<Vec<u8>, String> {
     let input = CRYPT_INTEGER_BLOB {
         cbData: u32::try_from(plaintext.len()).map_err(|_| "Clipboard history is too large")?,
         pbData: plaintext.as_ptr() as *mut u8,
@@ -276,7 +276,7 @@ fn dpapi_protect(plaintext: &[u8]) -> Result<Vec<u8>, String> {
     }
 }
 
-fn dpapi_unprotect(ciphertext: &[u8]) -> Result<Vec<u8>, String> {
+pub(crate) fn dpapi_unprotect(ciphertext: &[u8]) -> Result<Vec<u8>, String> {
     let input = CRYPT_INTEGER_BLOB {
         cbData: u32::try_from(ciphertext.len()).map_err(|_| "Clipboard history is too large")?,
         pbData: ciphertext.as_ptr() as *mut u8,

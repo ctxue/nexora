@@ -15,8 +15,12 @@ const SETTINGS_FIELDS = [
   "showRecent",
   "maxRecent",
   "fileSearch",
+  "browserBookmarks",
+  "browserHistory",
+  "browserTabs",
   "clipboardHistory",
   "launchAtStartup",
+  "disableInFullscreen",
   "launcherAnimation",
   "windowMode",
   "fontFamily",
@@ -24,6 +28,10 @@ const SETTINGS_FIELDS = [
   "radius",
   "shadow",
   "fontSize",
+  "searchWidth",
+  "resultsMaxHeight",
+  "showSearchPlaceholder",
+  "searchPlaceholder",
 ] as const;
 
 export interface LoadedConfiguration {

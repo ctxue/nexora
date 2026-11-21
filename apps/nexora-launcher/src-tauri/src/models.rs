@@ -17,6 +17,7 @@ pub struct FileEntry {
     pub path: String,
     pub extension: String,
     pub parent: String,
+    pub is_directory: bool,
     #[serde(skip)]
     pub search_name: String,
     #[serde(skip)]

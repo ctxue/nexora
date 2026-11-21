@@ -5,16 +5,20 @@ import {
   RADIUS_MAX,
   RADIUS_MIN,
   RECENT_CHOICES,
+  RESULTS_HEIGHT_PRESETS,
+  SEARCH_PLACEHOLDER_MAX_LENGTH,
   SHADOW_MAX,
   SHADOW_MIN,
+  SEARCH_WIDTH_PRESETS,
 } from "./defaults";
-import type { Settings } from "./types";
+import type { ResultsMaxHeight, SearchWidth, Settings } from "./types";
 
 export const SETTINGS_KEY = "nexora.settings.v1";
 
 const SHADOW_DEFAULT_MIGRATION_KEY = "nexora.settings.shadow-default.v1";
 const CLIPBOARD_PRIVACY_MIGRATION_KEY = "nexora.clipboard.privacy-pause.v1";
 const COMPACT_DEFAULT_MIGRATION_KEY = "nexora.settings.compact-default.v1";
+const RADIUS_DEFAULT_MIGRATION_KEY = "nexora.settings.radius-default.v1";
 
 export function clampRadius(value: unknown): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -35,6 +39,26 @@ export function clampFontSize(value: unknown): number {
     return DEFAULT_SETTINGS.fontSize;
   }
   return Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, Math.round(value)));
+}
+
+export function normalizeSearchWidth(value: unknown): SearchWidth {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_SETTINGS.searchWidth;
+  }
+
+  return SEARCH_WIDTH_PRESETS.reduce((nearest, preset) =>
+    Math.abs(preset - value) < Math.abs(nearest - value) ? preset : nearest,
+  );
+}
+
+export function normalizeResultsMaxHeight(value: unknown): ResultsMaxHeight {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_SETTINGS.resultsMaxHeight;
+  }
+
+  return RESULTS_HEIGHT_PRESETS.reduce((nearest, preset) =>
+    Math.abs(preset - value) < Math.abs(nearest - value) ? preset : nearest,
+  );
 }
 
 export function normalizeSettings(parsed: unknown): Settings {
@@ -58,6 +82,18 @@ export function normalizeSettings(parsed: unknown): Settings {
       typeof candidate.fileSearch === "boolean"
         ? candidate.fileSearch
         : DEFAULT_SETTINGS.fileSearch,
+    browserBookmarks:
+      typeof candidate.browserBookmarks === "boolean"
+        ? candidate.browserBookmarks
+        : DEFAULT_SETTINGS.browserBookmarks,
+    browserHistory:
+      typeof candidate.browserHistory === "boolean"
+        ? candidate.browserHistory
+        : DEFAULT_SETTINGS.browserHistory,
+    browserTabs:
+      typeof candidate.browserTabs === "boolean"
+        ? candidate.browserTabs
+        : DEFAULT_SETTINGS.browserTabs,
     clipboardHistory:
       typeof candidate.clipboardHistory === "boolean"
         ? candidate.clipboardHistory
@@ -66,6 +102,10 @@ export function normalizeSettings(parsed: unknown): Settings {
       typeof candidate.launchAtStartup === "boolean"
         ? candidate.launchAtStartup
         : DEFAULT_SETTINGS.launchAtStartup,
+    disableInFullscreen:
+      typeof candidate.disableInFullscreen === "boolean"
+        ? candidate.disableInFullscreen
+        : DEFAULT_SETTINGS.disableInFullscreen,
     launcherAnimation:
       typeof candidate.launcherAnimation === "boolean"
         ? candidate.launcherAnimation
@@ -85,6 +125,18 @@ export function normalizeSettings(parsed: unknown): Settings {
     radius: clampRadius(candidate.radius),
     shadow: clampShadow(candidate.shadow),
     fontSize: clampFontSize(candidate.fontSize),
+    searchWidth: normalizeSearchWidth(candidate.searchWidth),
+    resultsMaxHeight: normalizeResultsMaxHeight(candidate.resultsMaxHeight),
+    showSearchPlaceholder:
+      typeof candidate.showSearchPlaceholder === "boolean"
+        ? candidate.showSearchPlaceholder
+        : DEFAULT_SETTINGS.showSearchPlaceholder,
+    searchPlaceholder:
+      typeof candidate.searchPlaceholder === "string"
+        ? candidate.searchPlaceholder
+            .trim()
+            .slice(0, SEARCH_PLACEHOLDER_MAX_LENGTH)
+        : DEFAULT_SETTINGS.searchPlaceholder,
   };
 }
 
@@ -106,6 +158,13 @@ export function loadSettings(): Settings {
       window.localStorage.setItem(SHADOW_DEFAULT_MIGRATION_KEY, "1");
       if (settings.shadow === 70) {
         settings.shadow = 100;
+        changed = true;
+      }
+    }
+    if (window.localStorage.getItem(RADIUS_DEFAULT_MIGRATION_KEY) !== "1") {
+      window.localStorage.setItem(RADIUS_DEFAULT_MIGRATION_KEY, "1");
+      if (settings.radius === 8) {
+        settings.radius = 18;
         changed = true;
       }
     }

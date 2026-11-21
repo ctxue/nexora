@@ -2,10 +2,11 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 
 import type {
   AppEntry,
+  BrowserEntry,
   FileEntry,
   IconPayload,
   QuickPaths,
@@ -16,6 +17,13 @@ export interface BrowserInfo {
   id: string;
   name: string;
   exe: string;
+}
+
+export interface BrowserBridgeStatus {
+  extensionId: string;
+  extensionDir: string;
+  installed: boolean;
+  snapshotAvailable: boolean;
 }
 
 export type DriveKind = "fixed" | "removable" | "remote" | "ramdisk";
@@ -63,6 +71,39 @@ export interface ClipboardEntry {
   pinned: boolean;
 }
 
+export interface TraySettingsChange {
+  launchAtStartup: boolean;
+  clipboardHistory: boolean;
+}
+
+export interface GithubStatus {
+  configured: boolean;
+  connected: boolean;
+  login: string | null;
+  avatarUrl: string | null;
+  hasGist: boolean;
+}
+
+export interface GithubDeviceStart {
+  deviceCode: string;
+  userCode: string;
+  verificationUri: string;
+  expiresIn: number;
+  interval: number;
+  browserOpened: boolean;
+}
+
+export interface GithubDevicePoll {
+  status: "authorization_pending" | "slow_down" | "authorized";
+  login: string | null;
+  avatarUrl: string | null;
+}
+
+export interface GithubSyncResult {
+  gistId: string;
+  updatedAt: string | null;
+}
+
 export interface PreviewData {
   kind: "text" | "image" | "metadata";
   title: string;
@@ -74,6 +115,12 @@ export interface PreviewData {
 }
 
 export const platform = {
+  async setLauncherWindowWidth(width: number, height: number): Promise<void> {
+    const launcher = getCurrentWindow();
+    await launcher.setSize(new LogicalSize(width, height));
+    await launcher.center();
+  },
+
   listApps(): Promise<AppEntry[]> {
     return invoke<AppEntry[]>("list_apps");
   },
@@ -92,6 +139,18 @@ export const platform = {
 
   searchFiles(query: string, limit = 8): Promise<FileEntry[]> {
     return invoke<FileEntry[]>("search_files", { query, limit });
+  },
+
+  searchFilesInPath(
+    root: string,
+    query: string,
+    limit = 8,
+  ): Promise<FileEntry[]> {
+    return invoke<FileEntry[]>("search_files_in_path", {
+      query,
+      root,
+      limit,
+    });
   },
 
   listWindows(): Promise<WindowEntry[]> {
@@ -123,6 +182,34 @@ export const platform = {
       browser: browser === "default" ? null : browser,
       newWindow,
     });
+  },
+
+  listBrowserEntries(
+    bookmarks: boolean,
+    history: boolean,
+    tabs: boolean,
+  ): Promise<BrowserEntry[]> {
+    return invoke<BrowserEntry[]>("list_browser_entries", {
+      bookmarks,
+      history,
+      tabs,
+    });
+  },
+
+  activateBrowserTab(tabId: number): Promise<void> {
+    return invoke<void>("activate_browser_tab", { tabId });
+  },
+
+  browserBridgeStatus(): Promise<BrowserBridgeStatus> {
+    return invoke<BrowserBridgeStatus>("browser_bridge_status");
+  },
+
+  installBrowserBridge(): Promise<BrowserBridgeStatus> {
+    return invoke<BrowserBridgeStatus>("install_browser_bridge");
+  },
+
+  openBrowserExtensionDir(): Promise<void> {
+    return invoke<void>("open_browser_extension_dir");
   },
 
   pickExecutable(): Promise<string | null> {
@@ -278,6 +365,34 @@ export const platform = {
     return invoke<void>("set_launch_at_startup", { enabled });
   },
 
+  setFullscreenGuard(enabled: boolean): Promise<void> {
+    return invoke<void>("set_fullscreen_guard", { enabled });
+  },
+
+  githubStatus(): Promise<GithubStatus> {
+    return invoke<GithubStatus>("github_status");
+  },
+
+  githubDeviceStart(): Promise<GithubDeviceStart> {
+    return invoke<GithubDeviceStart>("github_device_start");
+  },
+
+  githubDevicePoll(deviceCode: string): Promise<GithubDevicePoll> {
+    return invoke<GithubDevicePoll>("github_device_poll", { deviceCode });
+  },
+
+  githubLogout(): Promise<void> {
+    return invoke<void>("github_logout");
+  },
+
+  githubUploadConfig(contents: string): Promise<GithubSyncResult> {
+    return invoke<GithubSyncResult>("github_upload_config", { contents });
+  },
+
+  githubDownloadConfig(): Promise<string> {
+    return invoke<string>("github_download_config");
+  },
+
   setTrayLanguage(language: "en" | "zh"): Promise<void> {
     return invoke<void>("set_tray_language", { language });
   },
@@ -316,5 +431,13 @@ export const platform = {
 
   onClipboardUpdated(handler: () => void): Promise<UnlistenFn> {
     return listen("clipboard-updated", handler);
+  },
+
+  onTraySettingsChanged(
+    handler: (settings: TraySettingsChange) => void,
+  ): Promise<UnlistenFn> {
+    return listen<TraySettingsChange>("tray-settings-changed", (event) =>
+      handler(event.payload),
+    );
   },
 };

@@ -16,5 +16,7 @@ pub fn set_launch_at_startup(app: AppHandle, enabled: bool) -> Result<(), String
     } else {
         autolaunch.disable()
     }
-    .map_err(|error| error.to_string())
+    .map_err(|error| error.to_string())?;
+
+    crate::tray::refresh(&app)
 }

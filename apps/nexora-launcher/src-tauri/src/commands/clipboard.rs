@@ -52,6 +52,9 @@ pub fn clear_clipboard(app: AppHandle, history: State<'_, ClipboardHistory>) {
 }
 
 #[tauri::command]
-pub fn set_clipboard_capture(history: State<'_, ClipboardHistory>, enabled: bool) {
+pub fn set_clipboard_capture(app: AppHandle, history: State<'_, ClipboardHistory>, enabled: bool) {
     history.set_capture_enabled(enabled);
+    if let Err(error) = crate::tray::refresh(&app) {
+        eprintln!("{error}");
+    }
 }

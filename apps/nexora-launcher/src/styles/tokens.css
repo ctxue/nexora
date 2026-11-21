@@ -10,12 +10,20 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
 
-  --launcher-radius: 8px;
+  --launcher-radius: 18px;
+  --launcher-corner-shape: squircle;
+  --launcher-surface: #ffffff;
+  --launcher-ring: rgba(15, 23, 42, 0.075);
+  --launcher-highlight: rgba(255, 255, 255, 0.92);
 
-  --launcher-shadow-1: 0.46;
-  --launcher-shadow-2: 0.24;
-  --launcher-shadow-3: 0.1;
+  --launcher-shadow-ambient: 0.32;
+  --launcher-shadow-contact: 0.1;
   --shadow-scale: 1;
+
+  --result-selection-bg: #f5f5f5;
+  --result-selection-text: #18181b;
+  --result-selection-border: rgba(24, 24, 27, 0.06);
+  --result-selection-mark: #3f3f46;
 
   --font-scale: 1;
 
@@ -49,20 +57,11 @@
   --knob-on: #ffffff;
 
   --settings-chrome: #ededf0;
-  --card-ring: transparent;
-  --caret: #3f3f46;
+  --caret: #18181b;
   --highlight: rgba(255, 255, 255, 0.8);
   --nav-hover: rgba(255, 255, 255, 0.58);
   --shadow-rgb: 15, 23, 42;
-  --launcher-glass-glow: rgba(255, 255, 255, 0.28);
-  --launcher-glass-border: linear-gradient(
-    135deg,
-    rgba(255, 255, 255, 0.98) 0%,
-    rgba(194, 213, 232, 0.42) 18%,
-    rgba(255, 255, 255, 0.92) 42%,
-    rgba(207, 223, 239, 0.48) 68%,
-    rgba(255, 255, 255, 0.94) 100%
-  );
+  --launcher-glass-glow: rgba(255, 255, 255, 0.34);
 
   --avatar-from: #f7f7f8;
   --avatar-to: #e7e7ea;
@@ -123,24 +122,21 @@
   --knob-on: #1b1b1f;
 
   --settings-chrome: #131316;
-  --card-ring: rgba(255, 255, 255, 0.07);
-  --caret: #d4d4d8;
+  --launcher-surface: #1c1c21;
+  --launcher-ring: rgba(255, 255, 255, 0.095);
+  --launcher-highlight: rgba(255, 255, 255, 0.075);
+  --caret: #fafafa;
   --highlight: rgba(255, 255, 255, 0.05);
   --nav-hover: rgba(255, 255, 255, 0.05);
   --shadow-rgb: 0, 0, 0;
   --launcher-glass-glow: rgba(255, 255, 255, 0.08);
-  --launcher-glass-border: linear-gradient(
-    135deg,
-    rgba(255, 255, 255, 0.32) 0%,
-    rgba(166, 198, 228, 0.16) 18%,
-    rgba(255, 255, 255, 0.22) 42%,
-    rgba(143, 180, 216, 0.14) 68%,
-    rgba(255, 255, 255, 0.26) 100%
-  );
+  --launcher-shadow-ambient: 0.72;
+  --launcher-shadow-contact: 0.32;
 
-  --launcher-shadow-1: 0.95;
-  --launcher-shadow-2: 0.6;
-  --launcher-shadow-3: 0.35;
+  --result-selection-bg: #2c2c33;
+  --result-selection-text: #fafafa;
+  --result-selection-border: rgba(255, 255, 255, 0.07);
+  --result-selection-mark: #a1a1aa;
 
   --avatar-from: #2b2b31;
   --avatar-to: #1d1d21;
@@ -182,10 +178,6 @@
 :root[data-font="system"] {
   --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text",
     "Segoe UI", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
-}
-
-:root[data-theme="dark"] .brand-mark {
-  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
 }
 
 :root[data-theme="dark"] .settings-content {

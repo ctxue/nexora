@@ -71,6 +71,7 @@ pub const EVENT_LAUNCHER_DRAG_ENDED: &str = "launcher-drag-ended";
 pub const EVENT_FILES_INDEXED: &str = "files-indexed";
 pub const EVENT_SHORTCUT_CAPTURED: &str = "shortcut-captured";
 pub const EVENT_CLIPBOARD_UPDATED: &str = "clipboard-updated";
+pub const EVENT_TRAY_SETTINGS_CHANGED: &str = "tray-settings-changed";
 
 pub const JUNK_SHORTCUT_MARKERS: [&str; 14] = [
     "uninstall",
@@ -89,7 +90,7 @@ pub const JUNK_SHORTCUT_MARKERS: [&str; 14] = [
     "许可证",
 ];
 
-pub const IGNORED_DIRS: [&str; 10] = [
+pub const IGNORED_DIRS: [&str; 13] = [
     "node_modules",
     ".git",
     ".svn",
@@ -100,6 +101,9 @@ pub const IGNORED_DIRS: [&str; 10] = [
     "program files (x86)",
     ".cache",
     "vendor",
+    "$recycle.bin",
+    "system volume information",
+    "recovery",
 ];
 
 pub const IGNORED_EXTENSIONS: [&str; 11] = [

@@ -5,9 +5,12 @@
 
 mod app;
 mod apps;
+mod browser_bridge;
+mod browser_data;
 mod clipboard;
 mod commands;
 mod config;
+mod github;
 mod icons;
 mod launcher;
 mod models;
@@ -20,3 +23,4 @@ mod tray;
 mod windows;
 
 pub use app::run;
+pub use browser_bridge::run_native_host_if_requested;

@@ -2,9 +2,9 @@
 $root = Split-Path -Parent $PSScriptRoot
 Push-Location $root
 try {
-  & pnpm test
+  & (Join-Path $root 'node_modules\.bin\vitest.cmd') run
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-  & pnpm test:scripts
+  & (Join-Path $PSHOME 'powershell.exe') -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'scripts\tests\release-workflow.tests.ps1')
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   & cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

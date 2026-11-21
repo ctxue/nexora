@@ -9,6 +9,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 trap {
+  Write-Output "Error: $_"
   Write-Error $_
   exit 1
 }
@@ -104,6 +105,7 @@ $releaseDir = if (-not $explicitOutput) {
   [System.IO.Path]::GetFullPath($OutputDirectory)
 }
 $executable = Join-Path $srcTauri "target\release\nexora.exe"
+$extensionDirectory = Join-Path $root "browser-extension"
 $installer = Join-Path $srcTauri "target\release\bundle\nsis\NEXORA_${version}_x64-setup.exe"
 $portable = Join-Path $releaseDir "NEXORA_LAUNCHER_${version}_portable.zip"
 $installerCopy = Join-Path $releaseDir "NEXORA_LAUNCHER_${version}_x64_setup.exe"
@@ -126,7 +128,7 @@ if (-not $explicitOutput -and (Test-Path -LiteralPath $releaseDir)) {
 }
 New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
 
-Compress-Archive -LiteralPath $executable -DestinationPath $portable -CompressionLevel Optimal
+Compress-Archive -LiteralPath @($executable, $extensionDirectory) -DestinationPath $portable -CompressionLevel Optimal
 Copy-Item -LiteralPath $installer -Destination $installerCopy
 
 Write-Host "Release $version packaged in $releaseDir"

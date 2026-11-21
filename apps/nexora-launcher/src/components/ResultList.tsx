@@ -2,6 +2,10 @@ import { CornerDownLeft, SearchX } from "lucide-react";
 import { useEffect, useRef, type CSSProperties } from "react";
 
 import type { LauncherItem, ResultGroup } from "../core/types";
+import {
+  shouldSelectFromPointer,
+  type PointerPosition,
+} from "../features/launcher/pointerSelection";
 import { useI18n } from "../i18n";
 import { ResultIcon } from "./ResultIcon";
 
@@ -26,6 +30,7 @@ export function ResultList({
 }: ResultListProps) {
   const { t } = useI18n();
   const selectedRef = useRef<HTMLButtonElement>(null);
+  const lastPointerPosition = useRef<PointerPosition | null>(null);
 
   useEffect(() => {
     selectedRef.current?.scrollIntoView({ block: "nearest" });
@@ -76,7 +81,22 @@ export function ResultList({
                 aria-selected={selected}
                 className={`result-row${selected ? " is-selected" : ""}`}
                 style={{ "--row-index": index } as CSSProperties}
-                onMouseEnter={() => onSelect(index)}
+                onPointerMove={(event) => {
+                  if (
+                    shouldSelectFromPointer(
+                      event.pointerType,
+                      event.clientX,
+                      event.clientY,
+                      lastPointerPosition.current,
+                    )
+                  ) {
+                    lastPointerPosition.current = {
+                      x: event.clientX,
+                      y: event.clientY,
+                    };
+                    onSelect(index);
+                  }
+                }}
                 onFocus={() => onSelect(index)}
                 onClick={() => onExecute(item)}
                 onContextMenu={(event) => {

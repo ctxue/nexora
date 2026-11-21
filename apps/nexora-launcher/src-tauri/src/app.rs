@@ -14,9 +14,12 @@ use crate::{
         AUTOSTART_FLAG, DEFAULT_SHORTCUT, EVENT_LAUNCHER_HIDDEN, FALLBACK_SHORTCUT, FOCUS_GRACE,
         LAUNCHER_WINDOW, SETTINGS_WINDOW,
     },
-    launcher::{apply_window_icon, show_launcher, toggle_launcher, CAPTURE_KEYS},
+    github::GithubState,
+    launcher::{
+        apply_window_icon, launcher_shortcut_allowed, show_launcher, toggle_launcher, CAPTURE_KEYS,
+    },
     platform::{hooks, titlebar, wndproc},
-    state::{ActiveShortcut, FileIndex, LauncherState},
+    state::{ActiveShortcut, FileIndex, LauncherState, PathFileCache},
     tray,
 };
 
@@ -77,7 +80,10 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let plugin_root = app.path().app_data_dir()?.join("plugins");
     std::fs::create_dir_all(&plugin_root)?;
     app.manage(commands::plugins::PluginHost::new(plugin_root));
-    let clipboard_path = app.path().app_data_dir()?.join("clipboard-history.bin");
+    let app_data_dir = app.path().app_data_dir()?;
+    let github_path = app_data_dir.join("github-auth.bin");
+    app.manage(GithubState::new(github_path));
+    let clipboard_path = app_data_dir.join("clipboard-history.bin");
     let clipboard = ClipboardHistory::new(clipboard_path);
     app.manage(clipboard.clone());
     start_monitor(app.handle().clone(), clipboard);
@@ -113,8 +119,8 @@ fn on_window_event(window: &tauri::Window, event: &WindowEvent) {
                         selected.clear();
                     }
                 }
-                let _ = window.emit(EVENT_LAUNCHER_HIDDEN, ());
                 let _ = window.hide();
+                let _ = window.emit(EVENT_LAUNCHER_HIDDEN, ());
             }
         }
         WindowEvent::Focused(false) => {
@@ -143,8 +149,8 @@ fn on_window_event(window: &tauri::Window, event: &WindowEvent) {
                     selected.clear();
                 }
             }
-            let _ = window.emit(EVENT_LAUNCHER_HIDDEN, ());
             let _ = window.hide();
+            let _ = window.emit(EVENT_LAUNCHER_HIDDEN, ());
         }
         _ => {}
     }
@@ -156,6 +162,7 @@ use tauri::Emitter;
 pub fn run() {
     let app = tauri::Builder::default()
         .manage(FileIndex::default())
+        .manage(PathFileCache::default())
         .manage(LauncherState::default())
         .manage(ActiveShortcut::default())
         .plugin(tauri_plugin_autostart::init(
@@ -177,7 +184,7 @@ pub fn run() {
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _shortcut, event| {
-                    if event.state == ShortcutState::Pressed {
+                    if event.state == ShortcutState::Pressed && launcher_shortcut_allowed(app) {
                         CAPTURE_KEYS.store(true, std::sync::atomic::Ordering::Relaxed);
                         toggle_launcher(app);
                     }
@@ -189,8 +196,15 @@ pub fn run() {
             commands::apps::get_quick_paths,
             commands::apps::start_file_index,
             commands::apps::search_files,
+            commands::apps::search_files_in_path,
             commands::apps::get_icons,
             commands::apps::open_path,
+            crate::github::github_status,
+            crate::github::github_device_start,
+            crate::github::github_device_poll,
+            crate::github::github_logout,
+            crate::github::github_upload_config,
+            crate::github::github_download_config,
             commands::actions::reveal_path,
             commands::actions::open_with,
             commands::actions::run_as_admin,
@@ -198,6 +212,11 @@ pub fn run() {
             commands::actions::get_selected_text,
             commands::browsers::list_browsers,
             commands::browsers::open_url,
+            commands::browser::list_browser_entries,
+            commands::browser::activate_browser_tab,
+            commands::browser::install_browser_bridge,
+            commands::browser::browser_bridge_status,
+            commands::browser::open_browser_extension_dir,
             commands::drives::list_drives,
             commands::library::pick_executable,
             commands::library::pick_file,
@@ -221,6 +240,7 @@ pub fn run() {
             commands::clipboard::clear_clipboard,
             commands::clipboard::set_clipboard_capture,
             commands::window::quit_app,
+            commands::window::set_fullscreen_guard,
             commands::settings::open_settings_window,
             commands::shortcuts::set_shortcut_capture,
             commands::shortcuts::get_shortcut_status,

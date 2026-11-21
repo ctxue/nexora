@@ -50,18 +50,14 @@ fn fuzzy_name_score(query: &str, name: &str) -> i32 {
     0
 }
 
-pub fn search_files(query: &str, limit: usize, index: &FileIndex) -> Vec<FileEntry> {
+pub fn search_file_entries(query: &str, limit: usize, files: &[FileEntry]) -> Vec<FileEntry> {
     let query = query.trim().to_lowercase();
+    let limit = limit.clamp(1, 30);
     if query.is_empty() {
-        return Vec::new();
+        return files.iter().take(limit).cloned().collect();
     }
 
-    let limit = limit.clamp(1, 30);
     let tokens: Vec<&str> = query.split_whitespace().collect();
-    let files = match index.files.lock() {
-        Ok(files) => files,
-        Err(_) => return Vec::new(),
-    };
 
     let mut scored: Vec<(i32, &FileEntry)> = files
         .iter()
@@ -105,4 +101,65 @@ pub fn search_files(query: &str, limit: usize, index: &FileIndex) -> Vec<FileEnt
         .take(limit)
         .map(|(_, file)| file.clone())
         .collect()
+}
+
+pub fn search_files(query: &str, limit: usize, index: &FileIndex) -> Vec<FileEntry> {
+    if query.trim().is_empty() {
+        return Vec::new();
+    }
+
+    let files = match index.files.lock() {
+        Ok(files) => files,
+        Err(_) => return Vec::new(),
+    };
+    search_file_entries(query, limit, &files)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn file(name: &str, path: &str) -> FileEntry {
+        FileEntry {
+            id: format!("file:{path}"),
+            name: name.to_string(),
+            path: path.to_string(),
+            extension: "txt".to_string(),
+            parent: "D:\\Projects".to_string(),
+            is_directory: false,
+            search_name: name.to_lowercase(),
+            search_text: format!("{} {}", name.to_lowercase(), path.to_lowercase()),
+        }
+    }
+
+    #[test]
+    fn path_search_can_list_files_without_query_text() {
+        let files = vec![
+            file("alpha.txt", "D:\\Projects\\alpha.txt"),
+            file("beta.txt", "D:\\Projects\\beta.txt"),
+        ];
+
+        let results = search_file_entries("", 8, &files);
+
+        assert_eq!(
+            results
+                .iter()
+                .map(|entry| entry.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["alpha.txt", "beta.txt"]
+        );
+    }
+
+    #[test]
+    fn path_search_ranks_matching_files_without_requiring_a_full_path() {
+        let files = vec![
+            file("notes.txt", "D:\\Projects\\notes.txt"),
+            file("report.txt", "D:\\Projects\\report.txt"),
+        ];
+
+        let results = search_file_entries("repo", 8, &files);
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].name, "report.txt");
+    }
 }

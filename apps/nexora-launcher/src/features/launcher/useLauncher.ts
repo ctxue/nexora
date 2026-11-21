@@ -24,11 +24,13 @@ import {
   type TemplateContext,
 } from "../../core/commands";
 import { evaluateSmartQuery } from "../../core/calculator";
+import { searchBrowserGroups } from "../../core/browserSearch";
 import { hasSearchFilters, parseSearchQuery } from "../../core/query";
 import { buildGroups, commandToItem } from "../../core/search";
 import { searchWindows } from "../../core/windows";
 import type {
   AppEntry,
+  BrowserEntry,
   CommandIcon,
   FileEntry,
   LauncherCommand,
@@ -98,6 +100,7 @@ interface LauncherOptions {
   commands: CustomCommand[];
   manualApps: ManualApp[];
   indexedApps: AppEntry[];
+  browserEntries: BrowserEntry[];
   plugins: PluginManifest[];
   disabledPlugins: string[];
   onOpenSettings: () => void;
@@ -110,6 +113,7 @@ export function useLauncher({
   commands: customCommands,
   manualApps,
   indexedApps,
+  browserEntries,
   plugins,
   disabledPlugins,
   onOpenSettings,
@@ -158,9 +162,7 @@ export function useLauncher({
   }, []);
 
   const hide = useCallback(() => {
-    clearQuery();
-    void platform.hide().catch(() => {
-    });
+    void platform.hide().then(clearQuery, clearQuery);
   }, [clearQuery]);
 
   const runPath = useCallback((path: string) => platform.openPath(path), []);
@@ -574,6 +576,14 @@ export function useLauncher({
     [commandItem, commands, customCommands, t],
   );
 
+  const openBrowserEntry = useCallback(async (entry: BrowserEntry) => {
+    if (entry.kind === "tab" && entry.tabId != null) {
+      await platform.activateBrowserTab(entry.tabId);
+      return;
+    }
+    await platform.openUrl(entry.url, entry.browserExe ?? "default", false);
+  }, []);
+
   const groups = useMemo<ResultGroup[]>(() => {
     if (scope) {
       return [
@@ -731,12 +741,24 @@ export function useLauncher({
           })()
         : null;
 
+    const browserGroups = searchBrowserGroups(
+      browserEntries,
+      searchFilters.text,
+      {
+        tabs: t("groups.tabs"),
+        bookmarks: t("groups.bookmarks"),
+        history: t("groups.history"),
+      },
+      openBrowserEntry,
+    );
+
     return [
       smartGroup,
       driveGroup,
       pluginGroup,
       commandGroup,
       appGroup,
+      ...browserGroups,
       windowGroup,
       fileGroup,
     ].filter(
@@ -745,6 +767,7 @@ export function useLauncher({
   }, [
     allApps,
     argument,
+    browserEntries,
     commandItem,
     commands,
     customCommands,
@@ -758,6 +781,7 @@ export function useLauncher({
     runPath,
     scope,
     scopedItem,
+    openBrowserEntry,
     showToast,
     t,
     windows,
@@ -896,10 +920,11 @@ export function useLauncher({
   useEffect(() => {
     const trimmed = searchFilters.text.trim();
     const requestId = ++searchRequest.current;
+    const searchable = Boolean(trimmed || searchFilters.pathRoot);
 
     if (
       !settings.fileSearch ||
-      !trimmed ||
+      !searchable ||
       scope ||
       searchSuspended ||
       searchFilters.appOnly ||
@@ -910,11 +935,21 @@ export function useLauncher({
     }
 
     const timer = window.setTimeout(() => {
-      void platform
-        .searchFiles(
-          trimmed,
-          searchFilters.type || searchFilters.folder ? 30 : 8,
-        )
+      const request = searchFilters.pathRoot
+        ? platform.searchFilesInPath(
+            searchFilters.pathRoot,
+            trimmed,
+            trimmed
+              ? searchFilters.type || searchFilters.folder
+                ? 30
+                : 8
+              : Number.MAX_SAFE_INTEGER,
+          )
+        : platform.searchFiles(
+            trimmed,
+            searchFilters.type || searchFilters.folder ? 30 : 8,
+          );
+      void request
         .then((files) => {
           if (searchRequest.current === requestId) {
             setFileResults(files);

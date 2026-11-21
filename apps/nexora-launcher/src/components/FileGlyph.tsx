@@ -6,6 +6,7 @@ import {
   FileImage,
   FileSpreadsheet,
   FileText,
+  Folder,
   Music,
   Presentation,
   Settings2,
@@ -59,8 +60,16 @@ const FILE_ICONS: Record<string, LucideIcon> = {
   yaml: Settings2,
 };
 
-export function FileGlyph({ extension }: { extension: string }) {
-  const Icon = FILE_ICONS[extension.toLowerCase()] ?? File;
+export function FileGlyph({
+  extension,
+  isDirectory = false,
+}: {
+  extension: string;
+  isDirectory?: boolean;
+}) {
+  const Icon = isDirectory
+    ? Folder
+    : (FILE_ICONS[extension.toLowerCase()] ?? File);
 
   return (
     <span className="glyph file-glyph">

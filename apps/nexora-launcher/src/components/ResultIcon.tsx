@@ -5,7 +5,7 @@ import { FileGlyph } from "./FileGlyph";
 
 type IconItem = Pick<
   LauncherItem,
-  "kind" | "title" | "extension" | "commandIcon"
+  "kind" | "title" | "extension" | "commandIcon" | "isDirectory"
 >;
 
 interface ResultIconProps {
@@ -31,7 +31,12 @@ export function ResultIcon({ item, icon }: ResultIconProps) {
   }
 
   if (item.kind === "file") {
-    return <FileGlyph extension={item.extension ?? ""} />;
+    return (
+      <FileGlyph
+        extension={item.extension ?? ""}
+        isDirectory={item.isDirectory}
+      />
+    );
   }
 
   return item.commandIcon ? <CommandGlyph icon={item.commandIcon} /> : null;

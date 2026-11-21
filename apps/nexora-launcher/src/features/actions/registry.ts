@@ -22,6 +22,9 @@ export function buildResultActions(item: LauncherItem): ResultActionDescriptor[]
   if (!item.path) return [];
 
   if (item.kind === "file") {
+    if (item.isDirectory) {
+      return PATH_ACTIONS.slice(0, 2);
+    }
     const canRunAsAdmin = ["exe", "com", "bat", "cmd", "msi"].includes(
       item.extension?.toLocaleLowerCase() ?? "",
     );

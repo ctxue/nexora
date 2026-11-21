@@ -109,7 +109,7 @@ function scoreField(query: string, value: string, allowFuzzy = true): number {
   return 0;
 }
 
-function scoreText(query: string, text: string, extra = ""): number {
+export function scoreText(query: string, text: string, extra = ""): number {
   let best = scoreField(query, text);
 
   if (extra) {
@@ -198,6 +198,7 @@ export function buildGroups(
     path: string;
     extension: string;
     parent: string;
+    isDirectory?: boolean;
   }>,
   commands: LauncherCommand[],
   query: string,
@@ -220,11 +221,16 @@ export function buildGroups(
     run: () => runPath(app.path),
   }));
 
-  const fileItems: LauncherItem[] = files
-    .filter(
-      (file) => !filters || matchesFileFilters(file, filters),
-    )
-    .slice(0, 5)
+  const sortedFiles = [...files]
+    .filter((file) => !filters || matchesFileFilters(file, filters))
+    .sort(
+      (a, b) => Number(Boolean(b.isDirectory)) - Number(Boolean(a.isDirectory)),
+    );
+  const fileItems: LauncherItem[] = (
+    filters?.pathRoot && !filters.text.trim()
+      ? sortedFiles
+      : sortedFiles.slice(0, 5)
+  )
     .map((file) => ({
       id: file.id,
       kind: "file",
@@ -232,6 +238,7 @@ export function buildGroups(
       subtitle: file.parent,
       path: file.path,
       extension: file.extension,
+      isDirectory: file.isDirectory,
       run: () => runPath(file.path),
     }));
 

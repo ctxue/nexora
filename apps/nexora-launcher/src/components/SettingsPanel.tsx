@@ -2,8 +2,13 @@
 
 import {
   AlertCircle,
+  CloudDownload,
+  CloudUpload,
   Download,
+  GitBranch,
   Keyboard,
+  LoaderCircle,
+  LogOut,
   RotateCcw,
   Trash2,
   Upload,
@@ -16,13 +21,20 @@ import {
   FONT_SIZE_MIN,
   RADIUS_MAX,
   RADIUS_MIN,
+  RESULTS_HEIGHT_PRESETS,
+  SEARCH_PLACEHOLDER_MAX_LENGTH,
+  SEARCH_WIDTH_PRESETS,
   SHADOW_MAX,
   SHADOW_MIN,
 } from "../features/settings/defaults";
 import type { Settings } from "../features/settings/types";
 import type { CustomCommand } from "../core/commands";
 import { appNameFromPath, type ManualApp } from "../features/apps/storage";
-import { platform, type PluginManifest } from "../platform/tauri";
+import {
+  platform,
+  type BrowserBridgeStatus,
+  type PluginManifest,
+} from "../platform/tauri";
 import { useI18n } from "../i18n";
 import { Segmented, ShortcutKeys, SliderRow, Toggle } from "./settings/Controls";
 import { AppsSettings } from "./settings/AppsSettings";
@@ -41,6 +53,7 @@ import {
   type SectionId,
 } from "./settings/sections";
 import { useConfigurationTransfer } from "./settings/useConfigurationTransfer";
+import { useGithubAuth } from "./settings/useGithubAuth";
 import { useNotice } from "./settings/useNotice";
 import { useShortcutRecorder } from "./settings/useShortcutRecorder";
 import {
@@ -104,16 +117,26 @@ export function SettingsPanel({
     () => readRequestedSettingsSection() ?? DEFAULT_SECTION,
   );
   const [startupBusy, setStartupBusy] = useState(false);
+  const [bridgeBusy, setBridgeBusy] = useState(false);
+  const [bridgeStatus, setBridgeStatus] =
+    useState<BrowserBridgeStatus | null>(null);
+  const [githubSyncing, setGithubSyncing] = useState(false);
   const { notice, showNotice } = useNotice();
   const { recording, toggleRecording, stopRecording } =
     useShortcutRecorder(onShortcutChange);
-  const { exportConfiguration, importConfiguration } = useConfigurationTransfer({
+  const {
+    exportConfiguration,
+    importConfiguration,
+    uploadConfiguration,
+    restoreConfiguration,
+  } = useConfigurationTransfer({
     settings,
     commands,
     onChange,
     onCommandsChange,
     showNotice,
   });
+  const github = useGithubAuth();
 
   useEffect(() => {
     const applyRequestedSection = () => {
@@ -132,11 +155,42 @@ export function SettingsPanel({
     };
   }, []);
 
+  useEffect(() => {
+    void platform
+      .browserBridgeStatus()
+      .then(setBridgeStatus)
+      .catch(() => setBridgeStatus(null));
+  }, []);
+
+  const installBridge = async () => {
+    if (bridgeBusy) return;
+    setBridgeBusy(true);
+    try {
+      setBridgeStatus(await platform.installBrowserBridge());
+    } finally {
+      setBridgeBusy(false);
+    }
+  };
+
   const toggleStartup = async () => {
     if (startupBusy) return;
     setStartupBusy(true);
     await onLaunchAtStartupChange(!settings.launchAtStartup);
     setStartupBusy(false);
+  };
+
+  const uploadGithubConfiguration = async () => {
+    if (githubSyncing) return;
+    setGithubSyncing(true);
+    await uploadConfiguration();
+    setGithubSyncing(false);
+  };
+
+  const restoreGithubConfiguration = async () => {
+    if (githubSyncing) return;
+    setGithubSyncing(true);
+    await restoreConfiguration();
+    setGithubSyncing(false);
   };
 
   const addManualApp = async () => {
@@ -233,14 +287,32 @@ export function SettingsPanel({
             <div className="profile-page">
               <div className="profile-hero">
                 <span className="profile-avatar-large" aria-hidden="true">
-                  <UserRound size={25} strokeWidth={1.7} />
+                  {github.status.connected && github.status.avatarUrl ? (
+                    <img
+                      className="profile-avatar-image"
+                      src={github.status.avatarUrl}
+                      alt=""
+                    />
+                  ) : github.status.connected ? (
+                    <GitBranch size={25} strokeWidth={1.7} />
+                  ) : (
+                    <UserRound size={25} strokeWidth={1.7} />
+                  )}
                 </span>
                 <div className="profile-name-large">
-                  {t("settings.profileLocal")}
+                  {github.status.connected
+                    ? `@${github.status.login}`
+                    : t("settings.profileLocal")}
                 </div>
-                <div className="profile-subline">{t("settings.profileHint")}</div>
+                <div className="profile-subline">
+                  {github.status.connected
+                    ? t("settings.githubConnected")
+                    : t("settings.profileHint")}
+                </div>
                 <div className="profile-device">
-                  {t("settings.profileDataHint")}
+                  {github.status.connected
+                    ? t("settings.githubPrivacyHint")
+                    : t("settings.profileDataHint")}
                 </div>
               </div>
 
@@ -249,18 +321,123 @@ export function SettingsPanel({
                 <div className="profile-list">
                   <div className="profile-list-row">
                     <div className="profile-row-copy">
-                      <div className="profile-row-title">{t("settings.accountType")}</div>
-                      <div className="profile-row-hint">{t("settings.accountTypeHint")}</div>
+                      <div className="profile-row-title">{t("settings.githubAccount")}</div>
+                      <div className="profile-row-hint">
+                        {github.status.connected
+                          ? t("settings.githubConnectedHint", {
+                              login: github.status.login ?? "",
+                            })
+                          : github.status.configured
+                            ? t("settings.githubLoginHint")
+                            : t("settings.githubClientMissing")}
+                      </div>
                     </div>
-                    <span className="profile-row-value">{t("settings.accountLocal")}</span>
+                    {github.status.connected ? (
+                      <button
+                        type="button"
+                        className="profile-action is-danger"
+                        disabled={github.busy}
+                        onClick={() => void github.logout()}
+                      >
+                        <LogOut size={13} strokeWidth={2} />
+                        {t("settings.githubLogout")}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="profile-action"
+                        disabled={!github.status.configured || github.busy}
+                        onClick={() => void github.startLogin()}
+                      >
+                        {github.busy ? (
+                          <LoaderCircle
+                            className="is-spinning"
+                            size={13}
+                            strokeWidth={2}
+                          />
+                        ) : (
+                          <GitBranch size={13} strokeWidth={2} />
+                        )}
+                        {github.busy
+                          ? t("settings.githubOpening")
+                          : t("settings.githubLogin")}
+                      </button>
+                    )}
                   </div>
                   <div className="profile-list-row">
                     <div className="profile-row-copy">
                       <div className="profile-row-title">{t("settings.cloudSync")}</div>
-                      <div className="profile-row-hint">{t("settings.cloudSyncHint")}</div>
+                      <div className="profile-row-hint">
+                        {github.status.connected
+                          ? t("settings.githubSyncHint")
+                          : t("settings.cloudSyncHint")}
+                      </div>
                     </div>
-                    <span className="profile-row-value">{t("settings.comingLater")}</span>
+                    {github.status.connected ? (
+                      <div className="profile-action-group">
+                        <button
+                          type="button"
+                          className="profile-action"
+                          disabled={githubSyncing}
+                          onClick={() => void uploadGithubConfiguration()}
+                        >
+                          <CloudUpload size={13} strokeWidth={2} />
+                          {t("settings.githubUpload")}
+                        </button>
+                        <button
+                          type="button"
+                          className="profile-action"
+                          disabled={githubSyncing}
+                          onClick={() => void restoreGithubConfiguration()}
+                        >
+                          <CloudDownload size={13} strokeWidth={2} />
+                          {t("settings.githubRestore")}
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="profile-row-value">
+                        {t("settings.comingLater")}
+                      </span>
+                    )}
                   </div>
+                  {github.device ? (
+                    <div className="profile-github-device">
+                      <span className="profile-github-waiting">
+                        <LoaderCircle
+                          className="is-spinning"
+                          size={12}
+                          strokeWidth={2}
+                        />
+                        {t("settings.githubWaiting")}
+                      </span>
+                      <strong>{github.device.userCode}</strong>
+                      <span>
+                        {github.device.browserOpened
+                          ? t("settings.githubEnterCode")
+                          : t("settings.githubBrowserNotOpened")}
+                      </span>
+                      <button
+                        type="button"
+                        className="profile-action"
+                        disabled={github.opening}
+                        onClick={() => void github.openVerificationPage()}
+                      >
+                        {t("settings.githubOpenBrowser")}
+                      </button>
+                      <button
+                        type="button"
+                        className="profile-action"
+                        onClick={github.cancelLogin}
+                      >
+                        {t("common.cancel")}
+                      </button>
+                    </div>
+                  ) : null}
+                  {github.error ? (
+                    <div className="profile-github-error">
+                      {t(github.error)}
+                    </div>
+                  ) : null}
                 </div>
               </section>
 
@@ -382,6 +559,48 @@ export function SettingsPanel({
                     value={settings.fontSize}
                     valueLabel={`${settings.fontSize}px`}
                     onChange={(fontSize) => onChange({ fontSize })}
+                  />
+                </div>
+
+                <div className="settings-row">
+                  <div className="settings-copy">
+                    <div className="settings-label">
+                      {t("settings.searchWidth")}
+                    </div>
+                    <div className="settings-description">
+                      {t("settings.searchWidthHint")}
+                    </div>
+                  </div>
+                  <Segmented
+                    label={t("settings.searchWidth")}
+                    value={settings.searchWidth}
+                    options={SEARCH_WIDTH_PRESETS.map((width) => ({
+                      value: width,
+                      label: `${width}px`,
+                    }))}
+                    onChange={(searchWidth) => onChange({ searchWidth })}
+                  />
+                </div>
+
+                <div className="settings-row">
+                  <div className="settings-copy">
+                    <div className="settings-label">
+                      {t("settings.resultsMaxHeight")}
+                    </div>
+                    <div className="settings-description">
+                      {t("settings.resultsMaxHeightHint")}
+                    </div>
+                  </div>
+                  <Segmented
+                    label={t("settings.resultsMaxHeight")}
+                    value={settings.resultsMaxHeight}
+                    options={RESULTS_HEIGHT_PRESETS.map((height) => ({
+                      value: height,
+                      label: `${height}px`,
+                    }))}
+                    onChange={(resultsMaxHeight) =>
+                      onChange({ resultsMaxHeight })
+                    }
                   />
                 </div>
 
@@ -675,8 +894,69 @@ export function SettingsPanel({
                 />
               </div>
 
+              <div className="settings-row">
+                <div className="settings-copy">
+                  <div className="settings-label">
+                    {t("settings.fullscreenGuard")}
+                  </div>
+                  <div className="settings-description">
+                    {t("settings.fullscreenGuardHint")}
+                  </div>
+                </div>
+                <Toggle
+                  checked={settings.disableInFullscreen}
+                  onClick={() =>
+                    onChange({
+                      disableInFullscreen: !settings.disableInFullscreen,
+                    })
+                  }
+                  label={t("settings.fullscreenGuard")}
+                />
+              </div>
+
               <div className="settings-group">
                 <div className="settings-group-title">{t("settings.search")}</div>
+
+                <div className="settings-row">
+                  <div className="settings-copy">
+                    <div className="settings-label">
+                      {t("settings.showSearchPlaceholder")}
+                    </div>
+                    <div className="settings-description">
+                      {t("settings.showSearchPlaceholderHint")}
+                    </div>
+                  </div>
+                  <Toggle
+                    checked={settings.showSearchPlaceholder}
+                    onClick={() =>
+                      onChange({
+                        showSearchPlaceholder: !settings.showSearchPlaceholder,
+                      })
+                    }
+                    label={t("settings.showSearchPlaceholder")}
+                  />
+                </div>
+
+                <div className="settings-row">
+                  <div className="settings-copy">
+                    <div className="settings-label">
+                      {t("settings.searchPlaceholderText")}
+                    </div>
+                    <div className="settings-description">
+                      {t("settings.searchPlaceholderTextHint")}
+                    </div>
+                  </div>
+                  <input
+                    className="settings-text-input"
+                    value={settings.searchPlaceholder}
+                    maxLength={SEARCH_PLACEHOLDER_MAX_LENGTH}
+                    placeholder={t("search.placeholder")}
+                    aria-label={t("settings.searchPlaceholderText")}
+                    onChange={(event) =>
+                      onChange({ searchPlaceholder: event.target.value })
+                    }
+                  />
+                </div>
 
                 <div className="settings-row">
                   <div className="settings-copy">
@@ -726,6 +1006,104 @@ export function SettingsPanel({
                     onClick={() => onChange({ fileSearch: !settings.fileSearch })}
                     label={t("settings.fileSearch")}
                   />
+                </div>
+
+                <div className="settings-row">
+                  <div className="settings-copy">
+                    <div className="settings-label">
+                      {t("settings.browserBookmarks")}
+                    </div>
+                    <div className="settings-description">
+                      {t("settings.browserBookmarksHint")}
+                    </div>
+                  </div>
+                  <Toggle
+                    checked={settings.browserBookmarks}
+                    onClick={() =>
+                      onChange({
+                        browserBookmarks: !settings.browserBookmarks,
+                      })
+                    }
+                    label={t("settings.browserBookmarks")}
+                  />
+                </div>
+
+                <div className="settings-row">
+                  <div className="settings-copy">
+                    <div className="settings-label">
+                      {t("settings.browserHistory")}
+                    </div>
+                    <div className="settings-description">
+                      {t("settings.browserHistoryHint")}
+                    </div>
+                  </div>
+                  <Toggle
+                    checked={settings.browserHistory}
+                    onClick={() =>
+                      onChange({ browserHistory: !settings.browserHistory })
+                    }
+                    label={t("settings.browserHistory")}
+                  />
+                </div>
+
+                <div className="settings-row">
+                  <div className="settings-copy">
+                    <div className="settings-label">
+                      {t("settings.browserTabs")}
+                    </div>
+                    <div className="settings-description">
+                      {t("settings.browserTabsHint")}
+                    </div>
+                  </div>
+                  <Toggle
+                    checked={settings.browserTabs}
+                    onClick={() =>
+                      onChange({ browserTabs: !settings.browserTabs })
+                    }
+                    label={t("settings.browserTabs")}
+                  />
+                </div>
+
+                <div className="settings-block">
+                  <div className="settings-block-title">
+                    {t("settings.browserBridge")}
+                  </div>
+                  <div className="settings-description">
+                    {t("settings.browserBridgeHint")}
+                  </div>
+                  <div className="settings-row">
+                    <div className="settings-copy">
+                      <div className="settings-label">
+                        {bridgeStatus?.installed
+                          ? t("settings.browserBridgeReady")
+                          : t("settings.browserBridgeMissing")}
+                      </div>
+                      <div className="settings-description">
+                        {bridgeStatus
+                          ? `${t("settings.browserBridgeExtension")}: ${bridgeStatus.extensionId}`
+                          : ""}
+                      </div>
+                    </div>
+                    <div className="profile-action-group">
+                      <button
+                        type="button"
+                        className="settings-action"
+                        disabled={bridgeBusy}
+                        onClick={() => void installBridge()}
+                      >
+                        {t("settings.browserBridgeInstall")}
+                      </button>
+                      <button
+                        type="button"
+                        className="settings-action"
+                        onClick={() =>
+                          void platform.openBrowserExtensionDir()
+                        }
+                      >
+                        {t("settings.browserBridgeFolder")}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </>

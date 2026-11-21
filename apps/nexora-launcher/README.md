@@ -8,7 +8,7 @@
 
 启动器搜索应用、文件与命令，结果按类别分组；命令模式可以用「关键词 + Tab」把输入变成一个作用域标签；设置窗口覆盖外观、内置功能、命令、应用、插件与配置备份。
 
-> 截图取自当前 0.4.0 版本，实际界面以当前构建为准。
+> 截图取自当前 0.4.1 版本，实际界面以当前构建为准。
 
 <table>
   <tr>
@@ -60,6 +60,7 @@
 
 **搜索**
 - 已安装应用：同时枚举 Windows **AppsFolder**（UWP / MSIX / 经典应用）与开始菜单 `.lnk`
+- 搜索提示语默认隐藏，可在设置中开启并自定义文案；留空时使用当前语言默认提示
 - 本机文件：桌面 / 文档 / 下载 / 图片，最多 20,000 条，内存索引
 - 磁盘：输入 `D` / `D:` / `D://` / `D盘` 直接打开对应磁盘根目录，支持固定 / 可移动 / 网络 / 内存盘
 - 剪贴板历史：用户开启后记录最近复制的文本，可搜索、重新复制、固定、删除和清空
@@ -69,7 +70,7 @@
 
 **外观与配置**
 - 主题：跟随系统 / 浅色 / 深色（原生标题栏同步换色）
-- 外观：全局文字大小 11–17px、启动器圆角 0–28px、窗口阴影 0–100%（默认 100%）、界面字体（系统 / Inter / Geist）
+- 外观：全局文字大小 11–17px、五档搜索框预设宽度（500 / 575 / 650 / 725 / 800px）、启动器圆角 0–28px、窗口阴影 0–100%（默认 100%）、界面字体（系统 / Inter / Geist）
 - 自定义命令：关键词 + Tab 触发，支持网页搜索 / 打开网址 / 打开文件或文件夹 / 运行程序，每条命令可指定浏览器
 - 文件索引：配置若干文件夹，里面的绿色软件会合并进「应用」搜索结果
 - 插件（Beta）：安装带 `plugin.json` 的插件文件夹，关键词触发、JSON-RPC 搜索、独立进程运行，可启停/卸载；协议见[插件开发指南](docs/plugin-development.md)，示例见 [`examples/plugins/ip`](examples/plugins/ip)
@@ -97,16 +98,16 @@ NEXORA 取自 *Nexus*（枢纽、连接点）与 *Aura / Orbit*（环绕、延�
 
 ```bash
 pnpm install          # 安装前端依赖（首次会同时拉取 Tauri CLI）
-pnpm dev:launcher     # 开发模式：Vite + Rust 热重载，自动打开启动器
+pnpm tauri dev        # 开发模式：Vite + Rust 热重载，自动打开启动器
 ```
 
 开发模式下启动器窗口会立即出现；修改前端代码热更新，修改 Rust 代码会自动重编译并重启。
 
-`pnpm dev:launcher` 会生成连接 `http://localhost:1420` 的实时开发进程，不要关闭 Vite 后直接打开
+`pnpm tauri dev` 会生成连接 `http://localhost:1420` 的实时开发进程，不要关闭 Vite 后直接打开
 对应的 `target/debug/nexora.exe`。如果需要一个可以直接双击、但仍带 debug 符号的可执行文件：
 
 ```powershell
-pnpm debug:launcher
+pnpm debug
 ```
 
 产物是 `src-tauri/target/debug/nexora.exe`，前端资源已经内嵌，不依赖 Vite。正式发布或做性能测试时
@@ -116,18 +117,17 @@ pnpm debug:launcher
 
 ### 测试、调试和打包
 
-以下命令从仓库根目录执行：
+以下命令从 NEXORA 项目根目录执行：
 
 ```powershell
-pnpm test:launcher       # 前端、Rust 和发布工作流测试
-pnpm debug:launcher      # 生成可直接运行的 debug 可执行文件
-pnpm package:launcher    # 只打包 NEXORA
-pnpm package:all         # 同时打包 NEXORA 和 NEXORA ISLE · 岛屿
+pnpm test:app            # 前端、Rust 和发布工作流测试
+pnpm debug               # 生成可直接运行的 debug 可执行文件
+pnpm package             # 打包 NEXORA
 pnpm clean               # 清理生成物，保留依赖
 pnpm clean:all           # 连依赖缓存一起清理
 ```
 
-发布文件统一输出到仓库根目录 `release/`：
+发布文件统一输出到项目根目录 `release/`：
 
 ```text
 NEXORA_LAUNCHER_<版本>_x64_setup.exe
@@ -161,7 +161,7 @@ NEXORA_LAUNCHER_<版本>_portable.zip
 | `Ctrl + ,` | 打开设置窗口 |
 | `↑` `↓` `Enter` | 选择与打开结果 |
 | `Esc` | 清空输入；再按一次关闭 |
-| 按住搜索栏图标拖动 | 移动窗口（位置会被记住） |
+| 按住搜索栏拖动 | 移动窗口（位置会被记住） |
 
 - 配置保存在 WebView2 的 `localStorage`（`nexora.settings.v1`）与最近记录（`nexora.recents.v1`）中；卸载应用不会删除它们，因此重装后配置仍在。
 - 设置 → 个人 → **配置备份** 可导出 `nexora-settings.json`，换电脑后直接导入；自定义命令会一起带走（文件索引与插件需重新配置/安装）。
@@ -186,14 +186,13 @@ NEXORA_LAUNCHER_<版本>_portable.zip
 | `App.tsx` | 启动器界面：搜索、键盘导航、拖拽、Toast |
 | `SettingsWindow.tsx` | 设置窗口外壳：快捷键录制、开机启动、重置等原生交互 |
 | `i18n.tsx` | 中英文案与 `useI18n` |
-| `components/SearchBar.tsx` | 搜索栏（拖拽区、命令标签、清空按钮、快捷键提示） |
+| `components/SearchBar.tsx` | 搜索栏（拖拽区、命令标签、清空按钮） |
 | `components/ResultList.tsx` | 搜索结果分组列表 |
 | `components/RecentList.tsx` | 最近使用列表 |
 | `components/QuickActions.tsx` | 首次使用时的快捷操作 |
 | `components/CommandGlyph.tsx` | 内置/自定义命令的图标 |
 | `components/ResultIcon.tsx` | 真实图标与字母/扩展名占位图标的选择 |
 | `components/AppGlyph.tsx` / `FileGlyph.tsx` | 无真实图标时的字母与文件类型占位 |
-| `components/BrandMark.tsx` | 品牌图形（镜环标记） |
 | `components/Footer.tsx` | 底部按键提示与索引状态 |
 | `components/ClipboardList.tsx` | 剪贴板历史列表与固定 / 删除操作 |
 | `components/AnimatedHeight.tsx` | 结果区域高度动画 |
@@ -303,7 +302,7 @@ NEXORA_LAUNCHER_<版本>_portable.zip
 | 现象 | 处理 |
 | --- | --- |
 | 安装时提示“已保护你的电脑” | 未签名安装包，点「更多信息 → 仍要运行」 |
-| 打开 `target/debug/nexora.exe` 显示 `ERR_CONNECTION_REFUSED` | 该文件是开发构建；重新运行 `pnpm dev:launcher`，或运行 `pnpm debug:launcher` 生成可直接双击的 debug 构建 |
+| 打开 `target/debug/nexora.exe` 显示 `ERR_CONNECTION_REFUSED` | 该文件是开发构建；重新运行 `pnpm tauri dev`，或运行 `pnpm debug` 生成可直接双击的 debug 构建 |
 | `Alt + Space` 无反应 | 被其他软件占用；打开设置 → 通用 → 全局快捷键改成 `Ctrl + Alt + Q` 等组合 |
 | 启动后窗口不出现 | 检查托盘图标是否存在，点托盘 → 打开 NEXORA |
 | 干净安装缺 WebView2 | 安装包会自动下载；也可手动安装 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) |
@@ -313,7 +312,7 @@ NEXORA_LAUNCHER_<版本>_portable.zip
 
 ## 版本历史
 
-见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **0.4.0**。
+见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **0.4.1**。
 
 ## 已知限制
 
@@ -327,7 +326,7 @@ NEXORA_LAUNCHER_<版本>_portable.zip
 
 欢迎 Issue 与 PR。提交前请确保：
 
-- 从仓库根目录运行 `pnpm test:launcher` 和 `pnpm test:workspace` 通过；
+- 从项目根目录运行 `pnpm test:app` 通过；
 - 界面改动附截图，并尽量复用 `docs/screenshots/` 的构图；
 - 新命令 / 插件附最小示例，并同步 `i18n.tsx` 的中英文案。
 

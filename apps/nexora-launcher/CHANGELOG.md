@@ -12,9 +12,24 @@
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-21
+
+### 新增
+
+- 浏览器书签、历史和已打开标签页搜索
+- 可选 NEXORA Companion 扩展，用于搜索并切回打开标签页
+- 搜索结果最大高度预设，可在设置中选择 320px / 400px / 480px
+- 白色主题使用纯白启动器背景
+
+### 修复
+
+- 鼠标停在结果区域时，键盘上下导航不再被滚动产生的伪悬停打断
+- 移除搜索结果分组之间的分割线
+- 底部快捷键和 Tab 作用域标签统一为 shadcn 风格
+
 ## [0.4.0] - 2026-11-08
 
-- 工作区重构：启动器迁入 `apps/nexora-launcher`，加入根级多产品调试与打包编排。
+- 启动器拆分为独立项目，并统一项目内调试与打包流程。
 - 发布文件统一为 `NEXORA_LAUNCHER_<版本>_x64_setup.exe` 与 `NEXORA_LAUNCHER_<版本>_portable.zip`。
 
 ### 安全
@@ -27,8 +42,8 @@
 
 ### 工程
 
-- 新增根级 `pnpm clean` / `pnpm clean:all`，统一清理构建缓存和发布暂存
-- 新增根级 `pnpm debug:launcher`、`pnpm package:launcher` / `pnpm package:all`，统一调试与发布流程；每个产品固定生成安装包和便携 ZIP 两个文件
+- 新增 `pnpm clean` / `pnpm clean:all`，统一清理构建缓存和发布暂存
+- 新增 `pnpm debug` / `pnpm package`，统一调试与发布流程，并生成安装包和便携 ZIP
 - GitHub Release 复用本地发布流程，并在发布前执行 Rust 测试和 Clippy
 
 ### 界面

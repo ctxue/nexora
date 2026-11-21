@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { DEFAULT_SETTINGS } from "./defaults";
+import { DEFAULT_SETTINGS, SEARCH_WIDTH_PRESETS } from "./defaults";
 import {
   clampFontSize,
   clampRadius,
@@ -35,17 +35,105 @@ describe("normalizeSettings", () => {
     expect(normalizeSettings({}).clipboardHistory).toBe(false);
   });
 
+  it("keeps browser data sources disabled by default and preserves opt-ins", () => {
+    expect(normalizeSettings({})).toMatchObject({
+      browserBookmarks: false,
+      browserHistory: false,
+      browserTabs: false,
+    });
+    expect(
+      normalizeSettings({
+        browserBookmarks: true,
+        browserHistory: true,
+        browserTabs: true,
+      }),
+    ).toMatchObject({
+      browserBookmarks: true,
+      browserHistory: true,
+      browserTabs: true,
+    });
+  });
+
+  it("keeps the fullscreen shortcut guard opt-in", () => {
+    expect(normalizeSettings({})).toMatchObject({
+      disableInFullscreen: false,
+    });
+    expect(normalizeSettings({ disableInFullscreen: true })).toMatchObject({
+      disableInFullscreen: true,
+    });
+  });
+
   it("defaults to the entrance animation and a collapsed launcher", () => {
     const settings = normalizeSettings({});
 
     expect(settings.launcherAnimation).toBe(true);
     expect(settings.windowMode).toBe("compact");
+    expect(settings.radius).toBe(18);
+    expect(settings.searchWidth).toBe(650);
+    expect(settings).toMatchObject({ resultsMaxHeight: 400 });
+    expect(settings.showSearchPlaceholder).toBe(false);
+    expect(settings.searchPlaceholder).toBe("");
   });
 
   it("keeps an explicitly disabled entrance animation", () => {
     const settings = normalizeSettings({ launcherAnimation: false });
 
     expect(settings.launcherAnimation).toBe(false);
+  });
+
+  it("keeps the supported search width presets", () => {
+    expect(SEARCH_WIDTH_PRESETS).toEqual([500, 575, 650, 725, 800]);
+    for (const searchWidth of SEARCH_WIDTH_PRESETS) {
+      expect(normalizeSettings({ searchWidth }).searchWidth).toBe(searchWidth);
+    }
+  });
+
+  it("moves legacy search widths to the nearest preset", () => {
+    expect(normalizeSettings({ searchWidth: 499 }).searchWidth).toBe(500);
+    expect(normalizeSettings({ searchWidth: 1001 }).searchWidth).toBe(800);
+    expect(normalizeSettings({ searchWidth: 720.6 }).searchWidth).toBe(725);
+    expect(normalizeSettings({ searchWidth: 900 }).searchWidth).toBe(800);
+    expect(normalizeSettings({ searchWidth: Number.NaN }).searchWidth).toBe(650);
+  });
+
+  it("moves results heights to the nearest supported preset", () => {
+    expect(normalizeSettings({ resultsMaxHeight: 300 })).toMatchObject({
+      resultsMaxHeight: 320,
+    });
+    expect(normalizeSettings({ resultsMaxHeight: 390 })).toMatchObject({
+      resultsMaxHeight: 400,
+    });
+    expect(normalizeSettings({ resultsMaxHeight: 470 })).toMatchObject({
+      resultsMaxHeight: 480,
+    });
+    expect(normalizeSettings({ resultsMaxHeight: 900 })).toMatchObject({
+      resultsMaxHeight: 480,
+    });
+    expect(normalizeSettings({ resultsMaxHeight: Number.NaN })).toMatchObject({
+      resultsMaxHeight: 400,
+    });
+  });
+
+  it("normalizes the optional search placeholder", () => {
+    expect(
+      normalizeSettings({
+        showSearchPlaceholder: true,
+        searchPlaceholder: "  Search now  ",
+      }),
+    ).toMatchObject({
+      showSearchPlaceholder: true,
+      searchPlaceholder: "Search now",
+    });
+
+    expect(
+      normalizeSettings({
+        showSearchPlaceholder: "yes",
+        searchPlaceholder: "x".repeat(200),
+      }),
+    ).toMatchObject({
+      showSearchPlaceholder: false,
+      searchPlaceholder: "x".repeat(120),
+    });
   });
 });
 
@@ -107,5 +195,41 @@ describe("loadSettings compact launcher upgrade", () => {
 
     saveSettings({ ...DEFAULT_SETTINGS, windowMode: "expanded" });
     expect(loadSettings().windowMode).toBe("expanded");
+  });
+});
+
+describe("loadSettings radius default upgrade", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("upgrades an old 8px radius once without overriding later choices", () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value),
+      },
+    });
+    saveSettings({ ...DEFAULT_SETTINGS, radius: 8 });
+
+    expect(loadSettings().radius).toBe(18);
+    expect(JSON.parse(values.get(SETTINGS_KEY) ?? "{}").radius).toBe(18);
+
+    saveSettings({ ...DEFAULT_SETTINGS, radius: 8 });
+    expect(loadSettings().radius).toBe(8);
+  });
+
+  it("preserves a custom radius during the default upgrade", () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value),
+      },
+    });
+    saveSettings({ ...DEFAULT_SETTINGS, radius: 12 });
+
+    expect(loadSettings().radius).toBe(12);
   });
 });

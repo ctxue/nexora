@@ -1,5 +1,6 @@
 pub mod actions;
 pub mod apps;
+pub mod browser;
 pub mod browsers;
 pub mod clipboard;
 pub mod drives;

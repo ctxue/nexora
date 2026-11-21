@@ -8,6 +8,13 @@ pub fn quit_app(app: AppHandle) {
 }
 
 #[tauri::command]
+pub fn set_fullscreen_guard(state: tauri::State<'_, LauncherState>, enabled: bool) {
+    state
+        .disable_in_fullscreen
+        .store(enabled, std::sync::atomic::Ordering::Relaxed);
+}
+
+#[tauri::command]
 pub fn start_window_drag(
     window: WebviewWindow,
     state: tauri::State<'_, LauncherState>,

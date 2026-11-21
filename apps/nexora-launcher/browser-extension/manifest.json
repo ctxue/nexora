@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "NEXORA Companion",
+  "version": "0.4.1",
+  "description": "Shares open browser tabs with NEXORA on this device.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtyVMlqmDJEtuuRTi35PovwKkj5x5EG4ajKB6DGMfoc23ukUvAosvCdphdkEM+R6SH8UbpBf9Uha+n6qj6J+1n17xEJyS056hO/trrBzx+qDqy5uHaY5LYDo3p9FtkHgMlM5HSSd7+D5/TyUen4no554VIbase6KCh6vtJAkntm441k+SSgw2kn91n1dzZz/9DfLRQxv2yiLR/zt1ymrAuV2crcx7BR3bJrhThIPCFubygISTRumV0ulmh9ZFy3y1PL6sEvEr2gNVUhr0p4ri7JesGJA7w2ruO46UTtJ6jlL5riQmeSDcKsmI6yPQfKlTtJCQJNosQPp4BeeWSyGzJQIDAQAB",
+  "permissions": [
+    "alarms",
+    "tabs",
+    "nativeMessaging"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Check NEXORA connection"
+  }
+}

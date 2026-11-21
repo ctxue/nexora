@@ -1,4 +1,4 @@
-name: NEXORA Combined Release
+name: NEXORA Launcher Release
 
 on:
   push:
@@ -40,21 +40,15 @@ jobs:
       - name: Run launcher tests
         run: pnpm test:launcher
 
-      - name: Run Isle tests
-        run: pnpm test:isle
-
       - name: Build and package release
-        run: pnpm package:all
-
-      - name: Check legacy artifact names
-        run: pnpm check:workspace
+        run: pnpm package:launcher
 
       - name: Verify packaged files
         shell: pwsh
         run: |
           $files = @(Get-ChildItem -LiteralPath release -File)
-          if ($files.Count -ne 4) { throw "Expected four release files, found $($files.Count)." }
-          if (@($files | Where-Object { $_.Name -notmatch '^NEXORA_(LAUNCHER|ISLE)_.+_(x64_setup\.exe|portable\.zip)$' }).Count) {
+          if ($files.Count -ne 2) { throw "Expected two launcher release files, found $($files.Count)." }
+          if (@($files | Where-Object { $_.Name -notmatch '^NEXORA_LAUNCHER_.+_(x64_setup\.exe|portable\.zip)$' }).Count) {
             throw "Unexpected release file name."
           }
 

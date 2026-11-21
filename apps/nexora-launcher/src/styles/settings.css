@@ -72,8 +72,12 @@
 .settings-nav-item.is-active {
   color: var(--text);
   background: var(--surface);
-  box-shadow: 0 1px 2px rgba(var(--shadow-rgb), 0.055);
+  box-shadow: inset 0 0 0 1px var(--result-selection-border);
   font-weight: 550;
+}
+
+.settings-nav-item.is-active svg {
+  color: var(--text-medium);
 }
 
 .settings-nav-caption {
@@ -281,6 +285,13 @@
   box-shadow: inset 0 1px 0 var(--highlight);
 }
 
+.profile-avatar-image {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
 .profile-name-large {
   margin-top: 11px;
   color: var(--text-title);
@@ -380,6 +391,60 @@
   color: var(--text-title);
   background: var(--control-bg-hover);
   border-color: var(--line-emphasis);
+}
+
+.profile-action:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.profile-action-group {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.profile-github-device {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px 12px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+  color: var(--text-subtle);
+  font-size: calc(10px * var(--font-scale));
+}
+
+.profile-github-device strong {
+  color: var(--text-title);
+  font-size: calc(14px * var(--font-scale));
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+}
+
+.profile-github-device > span:not(.profile-github-waiting) {
+  flex: 1 1 210px;
+}
+
+.profile-github-waiting {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-medium);
+}
+
+.is-spinning {
+  animation: spin 900ms linear infinite;
+}
+
+.profile-github-error {
+  padding: 9px 12px;
+  color: var(--danger-text);
+  background: var(--danger-bg);
+  border-top: 1px solid var(--danger-border);
+  font-size: calc(10px * var(--font-scale));
+  line-height: 1.4;
 }
 
 .profile-action.is-danger {
@@ -562,6 +627,23 @@
   color: var(--danger-text);
 }
 
+.settings-text-input {
+  width: 220px;
+  height: 28px;
+  flex: 0 0 220px;
+  padding: 0 9px;
+  color: var(--text-soft);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  font-size: calc(10.5px * var(--font-scale));
+  outline: none;
+}
+
+.settings-text-input:focus {
+  border-color: var(--subtle);
+}
+
 .settings-warning {
   display: flex;
   align-items: flex-start;
@@ -693,7 +775,7 @@
 .segment.is-active {
   color: var(--text-title);
   background: var(--surface);
-  box-shadow: 0 1px 2px rgba(var(--shadow-rgb), 0.08);
+  box-shadow: inset 0 0 0 1px var(--result-selection-border);
 }
 
 .segment:disabled {

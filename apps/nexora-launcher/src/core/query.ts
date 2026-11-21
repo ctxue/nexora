@@ -5,6 +5,7 @@ export interface SearchQuery {
   recentOnly: boolean;
   type: string | null;
   folder: string | null;
+  pathRoot: string | null;
 }
 
 export interface FileFilterInput {
@@ -20,13 +21,25 @@ const EMPTY_QUERY: SearchQuery = {
   recentOnly: false,
   type: null,
   folder: null,
+  pathRoot: null,
 };
 
 export function parseSearchQuery(raw: string): SearchQuery {
   const query = { ...EMPTY_QUERY };
   const words: string[] = [];
+  const driveScope =
+    /^([a-z]):[\\/]+([^\s]*)(?:\s+([\s\S]*))?$/iu.exec(raw.trim());
+  const pathSuffix = driveScope?.[2]
+    .replace(/[\\/]+/gu, "\\")
+    .replace(/^\\+|\\+$/gu, "");
+  const source = driveScope ? (driveScope[3] ?? "") : raw.trim();
 
-  for (const token of raw.trim().split(/\s+/u).filter(Boolean)) {
+  if (driveScope) {
+    query.pathRoot = `${driveScope[1].toLowerCase()}:\\${pathSuffix ?? ""}`;
+    query.fileOnly = true;
+  }
+
+  for (const token of source.split(/\s+/u).filter(Boolean)) {
     const lower = token.toLowerCase();
     if (lower === "app:") {
       query.appOnly = true;
@@ -72,7 +85,8 @@ export function hasSearchFilters(query: SearchQuery): boolean {
     query.fileOnly ||
     query.recentOnly ||
     query.type !== null ||
-    query.folder !== null
+    query.folder !== null ||
+    query.pathRoot !== null
   );
 }
 
@@ -96,7 +110,7 @@ function folderMatches(file: FileFilterInput, requested: string): boolean {
 
 export function matchesFileFilters(
   file: FileFilterInput,
-  filters: Pick<SearchQuery, "type" | "folder">,
+  filters: Pick<SearchQuery, "type" | "folder" | "pathRoot">,
 ): boolean {
   if (
     filters.type &&
@@ -106,6 +120,16 @@ export function matchesFileFilters(
   }
   if (filters.folder && !folderMatches(file, filters.folder)) {
     return false;
+  }
+  if (filters.pathRoot) {
+    const root = filters.pathRoot
+      .replace(/\//gu, "\\")
+      .toLocaleLowerCase()
+      .replace(/\\+$/u, "");
+    const path = file.path.replace(/\//gu, "\\").toLocaleLowerCase();
+    if (path !== root && !path.startsWith(`${root}\\`)) {
+      return false;
+    }
   }
   return true;
 }

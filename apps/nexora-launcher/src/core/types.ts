@@ -11,6 +11,7 @@ export interface FileEntry {
   path: string;
   extension: string;
   parent: string;
+  isDirectory: boolean;
 }
 
 export interface WindowEntry {
@@ -19,6 +20,20 @@ export interface WindowEntry {
   processName: string;
   processPath: string | null;
   minimized: boolean;
+}
+
+export type BrowserEntryKind = "bookmark" | "history" | "tab";
+
+export interface BrowserEntry {
+  id: string;
+  kind: BrowserEntryKind;
+  title: string;
+  url: string;
+  browserName: string;
+  browserExe: string | null;
+  lastVisited?: number;
+  tabId?: number;
+  windowId?: number;
 }
 
 export interface QuickPaths {
@@ -55,7 +70,15 @@ export interface LauncherCommand {
   run: () => void | Promise<void>;
 }
 
-export type ResultKind = "app" | "file" | "command" | "utility" | "window";
+export type ResultKind =
+  | "app"
+  | "file"
+  | "command"
+  | "utility"
+  | "window"
+  | "bookmark"
+  | "history"
+  | "tab";
 
 export interface LauncherItem {
   id: string;
@@ -64,6 +87,10 @@ export interface LauncherItem {
   subtitle: string;
   path?: string;
   extension?: string;
+  isDirectory?: boolean;
+  url?: string;
+  browserExe?: string | null;
+  browserTabId?: number;
   windowId?: string;
   commandIcon?: CommandIcon;
   keepOpen?: boolean;

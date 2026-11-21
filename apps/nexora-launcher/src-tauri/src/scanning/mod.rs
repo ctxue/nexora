@@ -16,7 +16,7 @@ use crate::{
     models::{AppEntry, FileEntry},
 };
 
-pub use search::search_files;
+pub use search::{search_file_entries, search_files};
 
 fn start_menu_roots() -> Vec<PathBuf> {
     let mut roots = Vec::new();
@@ -153,6 +153,161 @@ fn is_ignored_extension(extension: &str) -> bool {
     IGNORED_EXTENSIONS.contains(&extension)
 }
 
+fn collect_path_files(
+    root: &Path,
+    max_depth: usize,
+    include_directories: bool,
+    files: &mut Vec<FileEntry>,
+    seen: &mut HashSet<String>,
+) {
+    for entry in WalkDir::new(root)
+        .max_depth(max_depth)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(|entry| !is_ignored_dir(entry.path()))
+        .filter_map(Result::ok)
+    {
+        if files.len() >= MAX_FILES {
+            break;
+        }
+        let is_directory = entry.file_type().is_dir();
+        if !entry.file_type().is_file() && !(include_directories && is_directory) {
+            continue;
+        }
+        if entry.path() == root {
+            continue;
+        }
+
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if name.starts_with('.') {
+            continue;
+        }
+
+        let extension = if is_directory {
+            String::new()
+        } else {
+            path.extension()
+                .and_then(|extension| extension.to_str())
+                .unwrap_or("")
+                .to_lowercase()
+        };
+        if !is_directory && (extension.is_empty() || is_ignored_extension(&extension)) {
+            continue;
+        }
+
+        let path_string = path.to_string_lossy().to_string();
+        if !seen.insert(path_string.clone()) {
+            continue;
+        }
+
+        let parent = path
+            .parent()
+            .map(|parent| parent.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let search_name = name.to_lowercase();
+        let search_text = format!("{} {}", search_name, path_string.to_lowercase());
+
+        files.push(FileEntry {
+            id: format!("file:{path_string}"),
+            name: name.to_string(),
+            path: path_string,
+            extension,
+            parent,
+            is_directory,
+            search_name,
+            search_text,
+        });
+    }
+}
+
+fn sort_path_files(files: &mut [FileEntry]) {
+    files.sort_by(|a, b| {
+        b.is_directory
+            .cmp(&a.is_directory)
+            .then_with(|| a.search_name.cmp(&b.search_name))
+            .then_with(|| a.path.cmp(&b.path))
+    });
+}
+
+pub fn scan_path_files(root: &Path, max_depth: usize) -> Vec<FileEntry> {
+    if !root.is_dir() {
+        return Vec::new();
+    }
+
+    let mut files = Vec::new();
+    let mut seen = HashSet::new();
+    collect_path_files(root, max_depth, true, &mut files, &mut seen);
+    sort_path_files(&mut files);
+    files
+}
+
+pub fn scan_direct_path_files(root: &Path, limit: usize) -> Vec<FileEntry> {
+    if !root.is_dir() {
+        return Vec::new();
+    }
+
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return Vec::new();
+    };
+    let mut files = Vec::new();
+
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        if is_ignored_dir(&path) {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if name.starts_with('.') {
+            continue;
+        }
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        let is_directory = file_type.is_dir();
+        if !is_directory && !file_type.is_file() {
+            continue;
+        }
+
+        let extension = if is_directory {
+            String::new()
+        } else {
+            path.extension()
+                .and_then(|extension| extension.to_str())
+                .unwrap_or("")
+                .to_lowercase()
+        };
+        if !is_directory && (extension.is_empty() || is_ignored_extension(&extension)) {
+            continue;
+        }
+
+        let path_string = path.to_string_lossy().to_string();
+        let parent = path
+            .parent()
+            .map(|parent| parent.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let search_name = name.to_lowercase();
+        files.push(FileEntry {
+            id: format!("file:{path_string}"),
+            name: name.to_string(),
+            path: path_string.clone(),
+            extension,
+            parent,
+            is_directory,
+            search_name,
+            search_text: format!("{} {}", name.to_lowercase(), path_string.to_lowercase()),
+        });
+    }
+
+    sort_path_files(&mut files);
+    files.truncate(limit.max(1));
+    files
+}
+
 pub fn scan_files() -> Vec<FileEntry> {
     let mut roots = Vec::new();
     for root in [
@@ -172,66 +327,36 @@ pub fn scan_files() -> Vec<FileEntry> {
     let mut files = Vec::new();
     let mut seen = HashSet::new();
 
-    'roots: for root in roots {
-        for entry in WalkDir::new(root)
-            .max_depth(FILE_SCAN_MAX_DEPTH)
-            .follow_links(false)
-            .into_iter()
-            .filter_entry(|entry| !is_ignored_dir(entry.path()))
-            .filter_map(Result::ok)
-        {
-            if files.len() >= MAX_FILES {
-                break 'roots;
-            }
-            if !entry.file_type().is_file() {
-                continue;
-            }
-
-            let path = entry.path();
-            let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-                continue;
-            };
-            if name.starts_with('.') {
-                continue;
-            }
-
-            let extension = path
-                .extension()
-                .and_then(|extension| extension.to_str())
-                .unwrap_or("")
-                .to_lowercase();
-            if extension.is_empty() || is_ignored_extension(&extension) {
-                continue;
-            }
-
-            let path_string = path.to_string_lossy().to_string();
-            if !seen.insert(path_string.clone()) {
-                continue;
-            }
-
-            let parent = path
-                .parent()
-                .map(|parent| parent.to_string_lossy().to_string())
-                .unwrap_or_default();
-            let search_name = name.to_lowercase();
-            let search_text = format!("{} {}", search_name, path_string.to_lowercase());
-
-            files.push(FileEntry {
-                id: format!("file:{path_string}"),
-                name: name.to_string(),
-                path: path_string,
-                extension,
-                parent,
-                search_name,
-                search_text,
-            });
+    for root in roots {
+        collect_path_files(&root, FILE_SCAN_MAX_DEPTH, false, &mut files, &mut seen);
+        if files.len() >= MAX_FILES {
+            break;
         }
     }
 
-    files.sort_by(|a, b| {
-        a.search_name
-            .cmp(&b.search_name)
-            .then_with(|| a.path.cmp(&b.path))
-    });
+    sort_path_files(&mut files);
     files
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scans_files_below_an_arbitrary_path() {
+        let root = std::env::temp_dir().join(format!("nexora-path-scan-{}", std::process::id()));
+        let nested = root.join("Projects").join("Nested");
+        std::fs::create_dir_all(&nested).expect("create path fixture");
+        std::fs::write(root.join("root.txt"), b"root").expect("write root file");
+        std::fs::write(nested.join("child.md"), b"child").expect("write nested file");
+
+        let files = scan_path_files(&root, 4);
+        std::fs::remove_dir_all(&root).ok();
+
+        assert!(files.iter().any(|file| file.name == "root.txt"));
+        assert!(files.iter().any(|file| file.name == "child.md"));
+        assert!(files
+            .iter()
+            .any(|entry| entry.name == "Projects" && entry.is_directory));
+    }
 }

@@ -36,6 +36,31 @@ export function useSettings() {
   }, []);
 
   useEffect(() => {
+    let mounted = true;
+    let unlisten: (() => void) | undefined;
+
+    void platform
+      .onTraySettingsChanged((patch) => {
+        if (!mounted) return;
+        setSettings((current) => {
+          const next = { ...current, ...patch };
+          saveSettings(next);
+          return next;
+        });
+      })
+      .then((dispose) => {
+        if (mounted) unlisten = dispose;
+        else dispose();
+      })
+      .catch(() => {});
+
+    return () => {
+      mounted = false;
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
     document.documentElement.dataset.font = settings.fontFamily;
   }, [settings.fontFamily]);
 
@@ -64,6 +89,13 @@ export function useSettings() {
       String(settings.fontSize / FONT_SIZE_BASE),
     );
   }, [settings.fontSize]);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--results-max-height",
+      `${settings.resultsMaxHeight}px`,
+    );
+  }, [settings.resultsMaxHeight]);
 
   return { settings, updateSettings, resolvedTheme };
 }

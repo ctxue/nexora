@@ -23,6 +23,7 @@ import { SearchBar } from "./components/SearchBar";
 import type { AppEntry, LauncherItem } from "./core/types";
 import { findPreviewIndex } from "./core/navigation";
 import { useManualApps } from "./features/apps/useManualApps";
+import { useBrowserEntries } from "./features/browser/useBrowserEntries";
 import { useCommands } from "./features/commands/useCommands";
 import { useClipboard } from "./features/clipboard/useClipboard";
 import { filterClipboardEntries } from "./features/clipboard/filter";
@@ -33,6 +34,10 @@ import {
   launcherCardMotionFor,
   type LauncherVisibilityEvent,
 } from "./features/launcher/entrance";
+import {
+  LAUNCHER_WINDOW_HEIGHT,
+  launcherWindowWidth,
+} from "./features/launcher/windowSize";
 import { shouldSelectSearchInput } from "./features/launcher/searchInput";
 import {
   INITIAL_OVERLAY_STATE,
@@ -72,11 +77,13 @@ function Launcher({ settings }: { settings: Settings }) {
   const launcherMotion = launcherCardMotionFor(
     launcherVisibility,
     settings.launcherAnimation,
+    settings.searchWidth,
   );
   const { commands } = useCommands();
   const { apps: manualApps } = useManualApps();
   const { folders: indexFolders, updatedAt: indexUpdatedAt } = useIndexFolders();
   const { plugins, disabled: disabledPlugins } = usePlugins();
+  const browser = useBrowserEntries(settings);
   const clipboard = useClipboard();
   const [indexedApps, setIndexedApps] = useState<AppEntry[]>([]);
   const [clipboardUi, dispatchClipboardUi] = useReducer(
@@ -94,6 +101,15 @@ function Launcher({ settings }: { settings: Settings }) {
   const previewPath = previewItem?.path ?? null;
   const clipboardOpen = clipboardUi.open;
   const clipboardSelected = clipboardUi.selectedIndex;
+
+  useEffect(() => {
+    void platform
+      .setLauncherWindowWidth(
+        launcherWindowWidth(settings.searchWidth),
+        LAUNCHER_WINDOW_HEIGHT,
+      )
+      .catch(() => {});
+  }, [settings.searchWidth]);
 
   useEffect(() => {
     if (indexFolders.length === 0) {
@@ -164,6 +180,7 @@ function Launcher({ settings }: { settings: Settings }) {
     commands,
     manualApps,
     indexedApps,
+    browserEntries: browser.entries,
     plugins,
     disabledPlugins,
     onOpenSettings: openSettings,
@@ -333,6 +350,12 @@ function Launcher({ settings }: { settings: Settings }) {
       .setClipboardCapture(settings.clipboardHistory)
       .catch(() => {});
   }, [settings.clipboardHistory]);
+
+  useEffect(() => {
+    void platform
+      .setFullscreenGuard(settings.disableInFullscreen)
+      .catch(() => {});
+  }, [settings.disableInFullscreen]);
 
   useEffect(() => {
     void platform.setTrayLanguage(settings.language).catch(() => {
@@ -628,8 +651,9 @@ function Launcher({ settings }: { settings: Settings }) {
         >
           <SearchBar
             value={scope ? argument : query}
-            shortcut={settings.shortcut}
             inputRef={inputRef}
+            showPlaceholder={settings.showSearchPlaceholder}
+            placeholderText={settings.searchPlaceholder}
             onChange={(value) => {
               dispatchOverlays({ type: "close-actions" });
               if (clipboardOpen) {
@@ -642,10 +666,8 @@ function Launcher({ settings }: { settings: Settings }) {
             }}
             onDragStart={() => {
               setLauncherDragging(true);
-              window.requestAnimationFrame(() => {
-                void platform.startDragging().catch(() => {
-                  setLauncherDragging(false);
-                });
+              void platform.startDragging().catch(() => {
+                setLauncherDragging(false);
               });
             }}
             onActivateScope={activateScope}
@@ -669,8 +691,6 @@ function Launcher({ settings }: { settings: Settings }) {
 
           {!compactMode ? (
             <>
-              <div className="search-divider" />
-
               <AnimatedHeight animate={!query.trim() || clipboardOpen}>
                 {clipboardOpen ? (
                   <ClipboardList

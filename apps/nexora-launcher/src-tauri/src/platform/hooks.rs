@@ -25,7 +25,7 @@ use windows::Win32::{
 
 use crate::{
     config::{EVENT_SHORTCUT_CAPTURED, SETTINGS_WINDOW},
-    launcher::{toggle_launcher, CAPTURE_KEYS, EARLY_KEYS},
+    launcher::{launcher_shortcut_allowed, toggle_launcher, CAPTURE_KEYS, EARLY_KEYS},
 };
 
 static ALT_SPACE_ENABLED: AtomicBool = AtomicBool::new(false);
@@ -119,9 +119,11 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
 
             if alt {
                 if let Some(app) = hook_app() {
-                    CAPTURE_KEYS.store(true, Ordering::Relaxed);
-                    let app = app.clone();
-                    std::thread::spawn(move || toggle_launcher(&app));
+                    if launcher_shortcut_allowed(app) {
+                        CAPTURE_KEYS.store(true, Ordering::Relaxed);
+                        let app = app.clone();
+                        std::thread::spawn(move || toggle_launcher(&app));
+                    }
                 }
                 return LRESULT(1);
             }

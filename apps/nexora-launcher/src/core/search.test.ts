@@ -90,6 +90,7 @@ describe("buildGroups", () => {
         recentOnly: false,
         type: null,
         folder: null,
+        pathRoot: null,
       },
     );
 
@@ -112,6 +113,7 @@ describe("buildGroups", () => {
         recentOnly: false,
         type: "pdf",
         folder: "downloads",
+        pathRoot: null,
       },
     );
 
@@ -119,5 +121,80 @@ describe("buildGroups", () => {
     expect(groups[0].items.map((item) => item.title)).toEqual([
       "Quarterly report.pdf",
     ]);
+  });
+
+  it("returns drive-scoped files when the query text is empty", () => {
+    const driveFiles = [
+      ...files,
+      {
+        id: "drive-project",
+        name: "Project notes.md",
+        path: "D:\\Projects\\Project notes.md",
+        extension: "md",
+        parent: "D:\\Projects",
+      },
+      {
+        id: "drive-folder",
+        name: "Projects",
+        path: "D:\\Projects",
+        extension: "",
+        parent: "D:\\",
+        isDirectory: true,
+      },
+    ];
+    const groups = buildGroups(
+      apps,
+      driveFiles,
+      [],
+      "",
+      () => undefined,
+      undefined,
+      {
+        text: "",
+        appOnly: false,
+        fileOnly: true,
+        recentOnly: false,
+        type: null,
+        folder: null,
+        pathRoot: "d:\\",
+      },
+    );
+
+    expect(groups.map((group) => group.id)).toEqual(["file"]);
+    expect(groups[0].items.map((item) => item.title)).toEqual([
+      "Projects",
+      "Project notes.md",
+    ]);
+    expect(groups[0].items[0].isDirectory).toBe(true);
+  });
+
+  it("does not truncate the first level of a drive scope", () => {
+    const driveFiles = Array.from({ length: 9 }, (_, index) => ({
+      id: `drive-folder-${index}`,
+      name: `Folder ${index}`,
+      path: `D:\\Folder ${index}`,
+      extension: "",
+      parent: "D:\\",
+      isDirectory: true,
+    }));
+    const groups = buildGroups(
+      apps,
+      driveFiles,
+      [],
+      "",
+      () => undefined,
+      undefined,
+      {
+        text: "",
+        appOnly: false,
+        fileOnly: true,
+        recentOnly: false,
+        type: null,
+        folder: null,
+        pathRoot: "d:\\",
+      },
+    );
+
+    expect(groups[0].items).toHaveLength(9);
   });
 });

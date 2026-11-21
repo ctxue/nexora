@@ -48,4 +48,8 @@ export function applyInitialAppearance() {
     "--font-scale",
     String(settings.fontSize / FONT_SIZE_BASE),
   );
+  document.documentElement.style.setProperty(
+    "--results-max-height",
+    `${settings.resultsMaxHeight}px`,
+  );
 }

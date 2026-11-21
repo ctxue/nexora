@@ -1,6 +1,7 @@
 import { Command, LoaderCircle, Settings2 } from "lucide-react";
 
 import { useI18n } from "../i18n";
+import { Kbd } from "./ui/kbd";
 
 interface FooterProps {
   indexing: boolean;
@@ -37,7 +38,7 @@ export function Footer({
           >
             <Command size={11} strokeWidth={1.9} />
             <span>{t("footer.actions")}</span>
-            <kbd className="key-text">Ctrl K</kbd>
+            <Kbd>Ctrl K</Kbd>
           </button>
         ) : null}
       </div>
